@@ -1,0 +1,1453 @@
+create extension if not exists pgcrypto;
+
+-- =====================================================
+-- 1. ENUM TYPES
+-- =====================================================
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'app_user_status_enum') then
+    create type app_user_status_enum as enum ('active', 'inactive');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'app_user_role_enum') then
+    create type app_user_role_enum as enum ('customer', 'admin');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'app_gender_enum') then
+    create type app_gender_enum as enum ('male', 'female', 'other');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'product_gender_enum') then
+    create type product_gender_enum as enum ('men', 'women', 'unisex');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'product_type_enum') then
+    create type product_type_enum as enum (
+      'shirt', 'tshirt', 'blouse', 'pants', 'jeans', 'jacket',
+      'hoodie', 'dress', 'skirt', 'bag', 'shoes', 'accessory'
+    );
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'fit_type_enum') then
+    create type fit_type_enum as enum ('slim', 'regular', 'relaxed', 'oversized');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'product_status_enum') then
+    create type product_status_enum as enum ('active', 'inactive');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'size_enum') then
+    create type size_enum as enum ('xs', 's', 'm', 'l', 'xl', 'xxl', 'free_size');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'order_status_enum') then
+    create type order_status_enum as enum (
+      'pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'
+    );
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'delivery_status_enum') then
+    create type delivery_status_enum as enum ('pending', 'in_transit', 'delivered');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'payment_status_enum') then
+    create type payment_status_enum as enum ('pending', 'paid', 'failed');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'payment_method_enum') then
+    create type payment_method_enum as enum ('card', 'fpx', 'ewallet', 'cash_on_delivery');
+  end if;
+end $$;
+
+
+-- =====================================================
+-- 2. TABLES
+-- =====================================================
+create table if not exists public.styles (
+  style_id uuid primary key default gen_random_uuid(),
+  style_name text not null unique,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.categories (
+  category_id uuid primary key default gen_random_uuid(),
+  category_name text not null unique,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.users (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  user_name text not null default 'User',
+  user_email text not null unique,
+  user_gender app_gender_enum,
+  user_phone text,
+  user_profile_pic text,
+  height_cm numeric(5,2) check (height_cm is null or height_cm between 100 and 250),
+  weight_kg numeric(5,2) check (weight_kg is null or weight_kg between 20 and 300),
+  preferred_style_id uuid references public.styles(style_id) on delete set null,
+  status app_user_status_enum not null default 'active',
+  role app_user_role_enum not null default 'customer',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.products (
+  product_id uuid primary key default gen_random_uuid(),
+  category_id uuid not null references public.categories(category_id) on delete restrict,
+  product_name text not null unique,
+  product_description text,
+  product_gender product_gender_enum not null default 'unisex',
+  product_type product_type_enum not null,
+  fit_type fit_type_enum default 'regular',
+  color text,
+  material text,
+  product_price numeric(10,2) not null check (product_price >= 0),
+  product_status product_status_enum not null default 'active',
+  product_pic1 text,
+  product_pic2 text,
+  product_pic3 text,
+  product_pic4 text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.product_styles (
+  product_id uuid not null references public.products(product_id) on delete cascade,
+  style_id uuid not null references public.styles(style_id) on delete cascade,
+  primary key (product_id, style_id)
+);
+
+create table if not exists public.quantities (
+  quantity_id bigserial primary key,
+  product_id uuid not null references public.products(product_id) on delete cascade,
+  size size_enum not null,
+  product_stock integer not null default 0 check (product_stock >= 0),
+  product_sold integer not null default 0 check (product_sold >= 0),
+  unique (product_id, size)
+);
+
+create table if not exists public.wishlists (
+  wishlist_id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(user_id) on delete cascade,
+  product_id uuid not null references public.products(product_id) on delete cascade,
+  added_time timestamptz not null default now(),
+  unique (user_id, product_id)
+);
+
+create table if not exists public.cart (
+  cart_id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(user_id) on delete cascade,
+  product_id uuid not null references public.products(product_id) on delete cascade,
+  quantity_id bigint not null references public.quantities(quantity_id) on delete restrict,
+  quantity integer not null check (quantity > 0),
+  added_time timestamptz not null default now(),
+  unique (user_id, quantity_id)
+);
+
+create table if not exists public.addresses (
+  address_id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(user_id) on delete cascade,
+  address_name text,
+  recipient_name text not null,
+  phone text not null,
+  address_line1 text not null,
+  address_line2 text,
+  city text not null,
+  state text not null,
+  post_code text not null,
+  country text not null default 'Malaysia',
+  is_default boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists uq_addresses_one_default
+on public.addresses(user_id)
+where is_default = true;
+
+create table if not exists public.deliveries (
+  delivery_id uuid primary key default gen_random_uuid(),
+  address_id uuid not null references public.addresses(address_id) on delete cascade,
+  delivery_fee numeric(10,2) not null default 0 check (delivery_fee >= 0),
+  delivery_status delivery_status_enum not null default 'pending',
+  estimated_date date,
+  delivered_date date,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.orders (
+  order_id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(user_id) on delete cascade,
+  delivery_id uuid references public.deliveries(delivery_id) on delete set null,
+  order_date timestamptz not null default now(),
+  orders_status order_status_enum not null default 'pending',
+  order_subtotal numeric(10,2) not null default 0 check (order_subtotal >= 0),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.order_details (
+  order_detail_id uuid primary key default gen_random_uuid(),
+  order_id uuid not null references public.orders(order_id) on delete cascade,
+  product_id uuid not null references public.products(product_id) on delete restrict,
+  quantity_id bigint not null references public.quantities(quantity_id) on delete restrict,
+  quantity integer not null check (quantity > 0),
+  unit_price numeric(10,2) not null check (unit_price >= 0)
+);
+
+create table if not exists public.payment_methods (
+  method_id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(user_id) on delete cascade,
+  method_type payment_method_enum not null,
+  card_type text,
+  last_four text check (last_four is null or char_length(last_four) <= 4),
+  cardholder_name text,
+  expiry_month integer check (expiry_month between 1 and 12),
+  expiry_year integer,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.payments (
+  payment_id uuid primary key default gen_random_uuid(),
+  order_id uuid not null references public.orders(order_id) on delete cascade,
+  user_id uuid not null references public.users(user_id) on delete cascade,
+  tax numeric(10,2) not null default 0 check (tax >= 0),
+  discount numeric(10,2) not null default 0 check (discount >= 0),
+  total_amount numeric(10,2) not null check (total_amount >= 0),
+  payment_method payment_method_enum not null,
+  payment_status payment_status_enum not null default 'pending',
+  payment_date timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.ai_recommendations (
+  recommendation_id bigserial primary key,
+  user_id uuid not null references public.users(user_id) on delete cascade,
+  height_cm numeric(5,2),
+  weight_kg numeric(5,2),
+  requested_style_id uuid references public.styles(style_id) on delete set null,
+  recommended_products jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+
+-- =====================================================
+-- 3. INDEXES
+-- =====================================================
+create index if not exists idx_users_preferred_style_id
+on public.users(preferred_style_id);
+
+create index if not exists idx_products_category_id
+on public.products(category_id);
+
+create index if not exists idx_product_styles_style_id
+on public.product_styles(style_id);
+
+create index if not exists idx_quantities_product_id
+on public.quantities(product_id);
+
+create index if not exists idx_wishlists_user_id
+on public.wishlists(user_id);
+
+create index if not exists idx_cart_user_id
+on public.cart(user_id);
+
+create index if not exists idx_addresses_user_id
+on public.addresses(user_id);
+
+create index if not exists idx_orders_user_id
+on public.orders(user_id);
+
+create index if not exists idx_order_details_order_id
+on public.order_details(order_id);
+
+create index if not exists idx_payments_user_id
+on public.payments(user_id);
+
+create index if not exists idx_ai_recommendations_user_id
+on public.ai_recommendations(user_id);
+
+
+-- =====================================================
+-- 4. HELPER FUNCTIONS + TRIGGERS
+-- =====================================================
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_users_updated_at on public.users;
+create trigger trg_users_updated_at
+before update on public.users
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists trg_products_updated_at on public.products;
+create trigger trg_products_updated_at
+before update on public.products
+for each row
+execute function public.set_updated_at();
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.users (user_id, user_email, user_name)
+  values (
+    new.id,
+    new.email,
+    coalesce(
+      nullif(new.raw_user_meta_data ->> 'full_name', ''),
+      nullif(new.raw_user_meta_data ->> 'name', ''),
+      split_part(new.email, '@', 1),
+      'User'
+    )
+  )
+  on conflict (user_id) do nothing;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row
+execute function public.handle_new_user();
+
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.users
+    where user_id = auth.uid()
+      and role = 'admin'
+      and status = 'active'
+  );
+$$;
+
+grant execute on function public.is_admin() to authenticated;
+
+
+-- =====================================================
+-- 5. PRODUCT VIEW
+-- =====================================================
+create or replace view public.v_product_catalogue as
+select
+  p.product_id,
+  c.category_name,
+  p.product_name,
+  p.product_description,
+  p.product_gender,
+  p.product_type,
+  p.fit_type,
+  p.color,
+  p.material,
+  p.product_price,
+  p.product_status,
+  p.product_pic1,
+  p.product_pic2,
+  p.product_pic3,
+  p.product_pic4,
+  coalesce(
+    array_agg(distinct s.style_name) filter (where s.style_name is not null),
+    '{}'::text[]
+  ) as style_tags,
+  coalesce(
+    array_agg(distinct q.size::text) filter (where q.product_stock > 0),
+    '{}'::text[]
+  ) as available_sizes
+from public.products p
+join public.categories c
+  on c.category_id = p.category_id
+left join public.product_styles ps
+  on ps.product_id = p.product_id
+left join public.styles s
+  on s.style_id = ps.style_id
+left join public.quantities q
+  on q.product_id = p.product_id
+group by
+  p.product_id,
+  c.category_name,
+  p.product_name,
+  p.product_description,
+  p.product_gender,
+  p.product_type,
+  p.fit_type,
+  p.color,
+  p.material,
+  p.product_price,
+  p.product_status,
+  p.product_pic1,
+  p.product_pic2,
+  p.product_pic3,
+  p.product_pic4;
+
+grant select on public.v_product_catalogue to anon, authenticated;
+
+
+-- =====================================================
+-- 6. AI FUNCTIONS
+-- =====================================================
+create or replace function public.recommend_outfit_set(
+  p_height_cm numeric default null,
+  p_weight_kg numeric default null,
+  p_style_name text default null,
+  p_gender product_gender_enum default null
+)
+returns table (
+  category_name text,
+  product_id uuid,
+  product_name text,
+  product_price numeric,
+  recommended_size text,
+  matched_styles text[],
+  score numeric
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_height numeric;
+  v_weight numeric;
+  v_gender product_gender_enum;
+  v_style_id uuid;
+  v_bmi numeric;
+  v_sizes size_enum[];
+begin
+  select
+    coalesce(p_height_cm, u.height_cm),
+    coalesce(p_weight_kg, u.weight_kg),
+    coalesce(
+      p_gender,
+      case
+        when u.user_gender = 'male' then 'men'::product_gender_enum
+        when u.user_gender = 'female' then 'women'::product_gender_enum
+        else 'unisex'::product_gender_enum
+      end
+    )
+  into v_height, v_weight, v_gender
+  from public.users u
+  where u.user_id = auth.uid();
+
+  if v_height is null or v_weight is null then
+    raise exception 'Height and weight are required for recommendation.';
+  end if;
+
+  select s.style_id
+  into v_style_id
+  from public.styles s
+  where lower(s.style_name) = lower(
+    coalesce(
+      p_style_name,
+      (
+        select s2.style_name
+        from public.users u2
+        left join public.styles s2
+          on s2.style_id = u2.preferred_style_id
+        where u2.user_id = auth.uid()
+      )
+    )
+  )
+  limit 1;
+
+  v_bmi := v_weight / power(v_height / 100.0, 2);
+
+  if v_bmi < 18.5 then
+    v_sizes := array['xs', 's']::size_enum[];
+  elsif v_bmi < 23 then
+    v_sizes := array['s', 'm']::size_enum[];
+  elsif v_bmi < 27.5 then
+    v_sizes := array['m', 'l']::size_enum[];
+  else
+    v_sizes := array['l', 'xl', 'xxl']::size_enum[];
+  end if;
+
+  return query
+  with scored as (
+    select
+      c.category_name,
+      p.product_id,
+      p.product_name,
+      p.product_price,
+      coalesce(
+        (
+          select q1.size::text
+          from public.quantities q1
+          where q1.product_id = p.product_id
+            and q1.product_stock > 0
+            and (q1.size = any(v_sizes) or q1.size = 'free_size')
+          order by case q1.size
+            when 'xs' then 1
+            when 's' then 2
+            when 'm' then 3
+            when 'l' then 4
+            when 'xl' then 5
+            when 'xxl' then 6
+            when 'free_size' then 7
+          end
+          limit 1
+        ),
+        'out_of_stock'
+      ) as recommended_size,
+      coalesce(
+        array_agg(distinct s.style_name) filter (where s.style_name is not null),
+        '{}'::text[]
+      ) as matched_styles,
+      (
+        (
+          case
+            when v_style_id is not null and exists (
+              select 1
+              from public.product_styles ps2
+              where ps2.product_id = p.product_id
+                and ps2.style_id = v_style_id
+            ) then 0.50
+            else 0
+          end
+        )
+        +
+        (
+          case
+            when exists (
+              select 1
+              from public.quantities q2
+              where q2.product_id = p.product_id
+                and q2.product_stock > 0
+                and (q2.size = any(v_sizes) or q2.size = 'free_size')
+            ) then 0.30
+            else 0
+          end
+        )
+        +
+        coalesce(
+          (
+            select 0.20 * (
+              sum(q3.product_sold)::numeric /
+              nullif(sum(q3.product_sold + q3.product_stock), 0)
+            )
+            from public.quantities q3
+            where q3.product_id = p.product_id
+          ),
+          0
+        )
+      )::numeric(6,4) as score
+    from public.products p
+    join public.categories c
+      on c.category_id = p.category_id
+    left join public.product_styles ps
+      on ps.product_id = p.product_id
+    left join public.styles s
+      on s.style_id = ps.style_id
+    where p.product_status = 'active'
+      and (v_gender is null or p.product_gender in (v_gender, 'unisex'))
+      and (
+        v_style_id is null
+        or exists (
+          select 1
+          from public.product_styles psx
+          where psx.product_id = p.product_id
+            and psx.style_id = v_style_id
+        )
+      )
+    group by
+      c.category_name,
+      p.product_id,
+      p.product_name,
+      p.product_price
+  ),
+  ranked as (
+    select
+      *,
+      row_number() over (
+        partition by category_name
+        order by score desc, product_price asc, product_name asc
+      ) as rn
+    from scored
+    where score > 0
+  )
+  select
+    category_name,
+    product_id,
+    product_name,
+    product_price,
+    recommended_size,
+    matched_styles,
+    score
+  from ranked
+  where rn = 1
+    and category_name in ('Top', 'Bottom', 'Outerwear', 'Dress', 'Accessories')
+  order by case category_name
+    when 'Top' then 1
+    when 'Bottom' then 2
+    when 'Outerwear' then 3
+    when 'Dress' then 4
+    when 'Accessories' then 5
+    else 99
+  end;
+end;
+$$;
+
+grant execute on function public.recommend_outfit_set(numeric, numeric, text, product_gender_enum)
+to authenticated;
+
+create or replace function public.save_ai_recommendation_log(
+  p_height_cm numeric,
+  p_weight_kg numeric,
+  p_style_name text,
+  p_product_ids uuid[]
+)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_style_id uuid;
+  v_rec_id bigint;
+begin
+  select style_id
+  into v_style_id
+  from public.styles
+  where lower(style_name) = lower(p_style_name)
+  limit 1;
+
+  insert into public.ai_recommendations (
+    user_id,
+    height_cm,
+    weight_kg,
+    requested_style_id,
+    recommended_products
+  )
+  values (
+    auth.uid(),
+    p_height_cm,
+    p_weight_kg,
+    v_style_id,
+    to_jsonb(coalesce(p_product_ids, array[]::uuid[]))
+  )
+  returning recommendation_id into v_rec_id;
+
+  return v_rec_id;
+end;
+$$;
+
+grant execute on function public.save_ai_recommendation_log(numeric, numeric, text, uuid[])
+to authenticated;
+
+
+-- =====================================================
+-- 7. ENABLE RLS
+-- =====================================================
+alter table public.styles enable row level security;
+alter table public.categories enable row level security;
+alter table public.users enable row level security;
+alter table public.products enable row level security;
+alter table public.product_styles enable row level security;
+alter table public.quantities enable row level security;
+alter table public.wishlists enable row level security;
+alter table public.cart enable row level security;
+alter table public.addresses enable row level security;
+alter table public.deliveries enable row level security;
+alter table public.orders enable row level security;
+alter table public.order_details enable row level security;
+alter table public.payment_methods enable row level security;
+alter table public.payments enable row level security;
+alter table public.ai_recommendations enable row level security;
+
+
+-- =====================================================
+-- 8. POLICIES
+-- =====================================================
+drop policy if exists "styles readable by everyone" on public.styles;
+create policy "styles readable by everyone"
+on public.styles for select
+to anon, authenticated
+using (true);
+
+drop policy if exists "admins manage styles" on public.styles;
+create policy "admins manage styles"
+on public.styles for all
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "categories readable by everyone" on public.categories;
+create policy "categories readable by everyone"
+on public.categories for select
+to anon, authenticated
+using (true);
+
+drop policy if exists "admins manage categories" on public.categories;
+create policy "admins manage categories"
+on public.categories for all
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "users view own profile" on public.users;
+create policy "users view own profile"
+on public.users for select
+to authenticated
+using (auth.uid() = user_id);
+
+drop policy if exists "users insert own profile" on public.users;
+create policy "users insert own profile"
+on public.users for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+drop policy if exists "users update own profile" on public.users;
+create policy "users update own profile"
+on public.users for update
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists "admins view all users" on public.users;
+create policy "admins view all users"
+on public.users for select
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "products readable by everyone" on public.products;
+create policy "products readable by everyone"
+on public.products for select
+to anon, authenticated
+using (product_status = 'active' or public.is_admin());
+
+drop policy if exists "admins manage products" on public.products;
+create policy "admins manage products"
+on public.products for all
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "product styles readable by everyone" on public.product_styles;
+create policy "product styles readable by everyone"
+on public.product_styles for select
+to anon, authenticated
+using (true);
+
+drop policy if exists "admins manage product styles" on public.product_styles;
+create policy "admins manage product styles"
+on public.product_styles for all
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "quantities readable by everyone" on public.quantities;
+create policy "quantities readable by everyone"
+on public.quantities for select
+to anon, authenticated
+using (true);
+
+drop policy if exists "admins manage quantities" on public.quantities;
+create policy "admins manage quantities"
+on public.quantities for all
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "users manage own wishlist" on public.wishlists;
+create policy "users manage own wishlist"
+on public.wishlists for all
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists "users manage own cart" on public.cart;
+create policy "users manage own cart"
+on public.cart for all
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists "users manage own addresses" on public.addresses;
+create policy "users manage own addresses"
+on public.addresses for all
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists "users view own deliveries" on public.deliveries;
+create policy "users view own deliveries"
+on public.deliveries for select
+to authenticated
+using (
+  public.is_admin()
+  or exists (
+    select 1
+    from public.orders o
+    where o.delivery_id = deliveries.delivery_id
+      and o.user_id = auth.uid()
+  )
+);
+
+drop policy if exists "users create deliveries from own address" on public.deliveries;
+create policy "users create deliveries from own address"
+on public.deliveries for insert
+to authenticated
+with check (
+  public.is_admin()
+  or exists (
+    select 1
+    from public.addresses a
+    where a.address_id = deliveries.address_id
+      and a.user_id = auth.uid()
+  )
+);
+
+drop policy if exists "admins update deliveries" on public.deliveries;
+create policy "admins update deliveries"
+on public.deliveries for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "users view own orders or admin view all" on public.orders;
+create policy "users view own orders or admin view all"
+on public.orders for select
+to authenticated
+using (auth.uid() = user_id or public.is_admin());
+
+drop policy if exists "users create own orders" on public.orders;
+create policy "users create own orders"
+on public.orders for insert
+to authenticated
+with check (auth.uid() = user_id or public.is_admin());
+
+drop policy if exists "admins update orders" on public.orders;
+create policy "admins update orders"
+on public.orders for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "users view own order details or admin" on public.order_details;
+create policy "users view own order details or admin"
+on public.order_details for select
+to authenticated
+using (
+  public.is_admin()
+  or exists (
+    select 1
+    from public.orders o
+    where o.order_id = order_details.order_id
+      and o.user_id = auth.uid()
+  )
+);
+
+drop policy if exists "users create own order details or admin" on public.order_details;
+create policy "users create own order details or admin"
+on public.order_details for insert
+to authenticated
+with check (
+  public.is_admin()
+  or exists (
+    select 1
+    from public.orders o
+    where o.order_id = order_details.order_id
+      and o.user_id = auth.uid()
+  )
+);
+
+drop policy if exists "users manage own payment methods" on public.payment_methods;
+create policy "users manage own payment methods"
+on public.payment_methods for all
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists "users view own payments or admin" on public.payments;
+create policy "users view own payments or admin"
+on public.payments for select
+to authenticated
+using (auth.uid() = user_id or public.is_admin());
+
+drop policy if exists "users create own payments or admin" on public.payments;
+create policy "users create own payments or admin"
+on public.payments for insert
+to authenticated
+with check (auth.uid() = user_id or public.is_admin());
+
+drop policy if exists "admins update payments" on public.payments;
+create policy "admins update payments"
+on public.payments for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "users manage own ai recommendations" on public.ai_recommendations;
+create policy "users manage own ai recommendations"
+on public.ai_recommendations for all
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+
+-- =====================================================
+-- 9. SEED DATA
+-- =====================================================
+insert into public.styles (style_name)
+values
+  ('Korean'),
+  ('Japanese'),
+  ('European'),
+  ('Casual'),
+  ('Streetwear'),
+  ('Minimalist'),
+  ('Vintage'),
+  ('Formal'),
+  ('Sporty'),
+  ('Chic')
+on conflict (style_name) do nothing;
+
+insert into public.categories (category_name)
+values
+  ('Top'),
+  ('Bottom'),
+  ('Outerwear'),
+  ('Dress'),
+  ('Accessories'),
+  ('Workwear'),
+  ('Partywear'),
+  ('Loungewear'),
+  ('Sportwear'),
+  ('Seasonal')
+on conflict (category_name) do nothing;
+
+insert into public.users (
+  user_id,
+  user_name,
+  user_email,
+  user_gender,
+  user_phone,
+  user_profile_pic,
+  height_cm,
+  weight_kg,
+  preferred_style_id,
+  status,
+  role
+)
+select
+  au.id,
+  x.user_name,
+  x.user_email,
+  x.user_gender::app_gender_enum,
+  x.user_phone,
+  x.user_profile_pic,
+  x.height_cm,
+  x.weight_kg,
+  s.style_id,
+  x.status::app_user_status_enum,
+  x.role::app_user_role_enum
+from (
+  values
+    ('Admin User','admin@gmail.com','female','0121111111','admin.png',165,50,'Formal','active','admin'),
+    ('Alicia Tan','alicia@gmail.com','female','0122222222','alicia.png',160,48,'Korean','active','customer'),
+    ('Bryan Lee','bryan@gmail.com','male','0123333333','bryan.png',175,68,'Streetwear','active','customer'),
+    ('Cindy Wong','cindy@gmail.com','female','0124444444','cindy.png',158,45,'Chic','active','customer'),
+    ('Daniel Lim','daniel@gmail.com','male','0125555555','daniel.png',178,72,'Casual','active','customer'),
+    ('Emily Goh','emily@gmail.com','female','0126666666','emily.png',162,52,'Japanese','active','customer'),
+    ('Farah Noor','farah@gmail.com','female','0127777777','farah.png',168,56,'Minimalist','active','customer'),
+    ('Hafiz Rahman','hafiz@gmail.com','male','0128888888','hafiz.png',180,75,'Sporty','active','customer'),
+    ('Ivy Chan','ivy@gmail.com','female','0129999999','ivy.png',157,47,'Vintage','active','customer'),
+    ('Jason Khoo','jason@gmail.com','male','0131111111','jason.png',172,66,'European','active','customer')
+) as x(
+  user_name, user_email, user_gender, user_phone, user_profile_pic,
+  height_cm, weight_kg, style_name, status, role
+)
+join auth.users au
+  on lower(au.email) = lower(x.user_email)
+left join public.styles s
+  on s.style_name = x.style_name
+on conflict (user_id) do update
+set
+  user_name = excluded.user_name,
+  user_email = excluded.user_email,
+  user_gender = excluded.user_gender,
+  user_phone = excluded.user_phone,
+  user_profile_pic = excluded.user_profile_pic,
+  height_cm = excluded.height_cm,
+  weight_kg = excluded.weight_kg,
+  preferred_style_id = excluded.preferred_style_id,
+  status = excluded.status,
+  role = excluded.role,
+  updated_at = now();
+
+insert into public.products (
+  category_id,
+  product_name,
+  product_description,
+  product_gender,
+  product_type,
+  fit_type,
+  color,
+  material,
+  product_price,
+  product_status,
+  product_pic1,
+  product_pic2,
+  product_pic3,
+  product_pic4
+)
+select
+  c.category_id,
+  p.product_name,
+  p.product_description,
+  p.product_gender::product_gender_enum,
+  p.product_type::product_type_enum,
+  p.fit_type::fit_type_enum,
+  p.color,
+  p.material,
+  p.product_price,
+  'active'::product_status_enum,
+  p.product_pic1,
+  p.product_pic2,
+  p.product_pic3,
+  p.product_pic4
+from (
+  values
+  ('Top','Korean Oversize Shirt','Loose Korean style shirt for daily wear.','unisex','shirt','oversized','White','Cotton',69.90,'oversize_shirt_K1.PNG','oversize_shirt_K2.PNG','oversize_shirt_K3.PNG','oversize_shirt_K4.PNG'),
+  ('Top','White Office Shirt','Clean office shirt for formal look.','unisex','shirt','regular','White','Cotton',65.90,'white_office_shirt_1.png','white_office_shirt_2.png','white_office_shirt_3.png','white_office_shirt_4.png'),
+  ('Top','Blue Stripe Shirt','Blue stripe shirt for smart casual style.','men','shirt','regular','Blue','Cotton',67.90,'blue_stripe_shirt_1.png','blue_stripe_shirt_2.png','blue_stripe_shirt_3.png','blue_stripe_shirt_4.png'),
+  ('Top','Satin Formal Shirt','Soft satin formal shirt for elegant look.','women','shirt','slim','Cream','Satin',72.90,'satin_formal_shirt_1.png','satin_formal_shirt_2.png','satin_formal_shirt_3.png','satin_formal_shirt_4.png'),
+
+  ('Top','Korean Crop Tee','Simple crop tee with 4 image set.','women','tshirt','slim','Black','Cotton',42.90,'crop_tee_K1.png','crop_tee_K2.png','crop_tee_K3.png','crop_tee_K4.png'),
+  ('Top','Ghost Graphic Tee','Black graphic tee with cute ghost print.','unisex','tshirt','regular','Black','Cotton',45.90,'ghost_graphic_tee_1.png','ghost_graphic_tee_2.png','ghost_graphic_tee_3.png','ghost_graphic_tee_4.png'),
+  ('Top','Basic Black Drawstring Tee','Black drawstring tee for casual outfit.','women','tshirt','slim','Black','Cotton',41.90,'drawstring_tee_1.png','drawstring_tee_2.png','drawstring_tee_3.png','drawstring_tee_4.png'),
+  ('Top','Sky Blue Off Shoulder Tee','Soft blue off shoulder tee for cute look.','women','tshirt','relaxed','Blue','Cotton',46.90,'off_shoulder_tee_1.png','off_shoulder_tee_2.png','off_shoulder_tee_3.png','off_shoulder_tee_4.png'),
+
+  ('Top','Ribbon Blouse','Ribbon blouse with feminine style.','women','blouse','regular','Pink','Chiffon',59.90,'ribbon_blouse_1.png','ribbon_blouse_2.png','ribbon_blouse_3.png','ribbon_blouse_4.png'),
+  ('Top','Puff Sleeve Blouse','Puff sleeve blouse for sweet fashion look.','women','blouse','regular','White','Cotton',61.90,'puff_sleeve_blouse_1.png','puff_sleeve_blouse_2.png','puff_sleeve_blouse_3.png','puff_sleeve_blouse_4.png'),
+  ('Top','Satin Beige Blouse','Elegant satin blouse for formal wear.','women','blouse','regular','Beige','Satin',64.90,'satin_beige_blouse_1.png','satin_beige_blouse_2.png','satin_beige_blouse_3.png','satin_beige_blouse_4.png'),
+  ('Top','Floral Chiffon Blouse','Light floral blouse for soft outfit.','women','blouse','relaxed','Blue','Chiffon',58.90,'floral_chiffon_blouse_1.png','floral_chiffon_blouse_2.png','floral_chiffon_blouse_3.png','floral_chiffon_blouse_4.png'),
+
+  ('Bottom','Wide Leg Pants','Wide leg pants for relaxed daily wear.','women','pants','relaxed','Black','Polyester',75.90,'wide_leg_pants_1.png','wide_leg_pants_2.png','wide_leg_pants_3.png','wide_leg_pants_4.png'),
+  ('Bottom','Office Straight Pants','Straight pants for formal office look.','unisex','pants','regular','Grey','Polyester',78.90,'office_straight_pants_1.png','office_straight_pants_2.png','office_straight_pants_3.png','office_straight_pants_4.png'),
+  ('Bottom','Casual Cargo Pants','Cargo pants for streetwear outfit.','unisex','pants','relaxed','Khaki','Cotton',82.90,'cargo_pants_1.png','cargo_pants_2.png','cargo_pants_3.png','cargo_pants_4.png'),
+  ('Bottom','Black Jogger Pants','Comfort jogger pants for active style.','unisex','pants','regular','Black','Cotton',69.90,'black_jogger_pants_1.png','black_jogger_pants_2.png','black_jogger_pants_3.png','black_jogger_pants_4.png'),
+
+  ('Bottom','Korean Wide Jeans','Wide jeans for trendy Korean outfit.','women','jeans','relaxed','Blue','Denim',89.90,'korean_wide_jeans_1.png','korean_wide_jeans_2.png','korean_wide_jeans_3.png','korean_wide_jeans_4.png'),
+  ('Bottom','High Waist Skinny Jeans','High waist skinny jeans for slim fit.','women','jeans','slim','Dark Blue','Denim',84.90,'skinny_jeans_1.png','skinny_jeans_2.png','skinny_jeans_3.png','skinny_jeans_4.png'),
+  ('Bottom','Straight Blue Jeans','Straight jeans for simple casual look.','men','jeans','regular','Blue','Denim',79.90,'straight_blue_jeans_1.png','straight_blue_jeans_2.png','straight_blue_jeans_3.png','straight_blue_jeans_4.png'),
+  ('Bottom','Relaxed Mom Jeans','Mom jeans for everyday casual style.','women','jeans','relaxed','Light Blue','Denim',86.90,'mom_jeans_1.png','mom_jeans_2.png','mom_jeans_3.png','mom_jeans_4.png'),
+
+  ('Outerwear','Cropped Denim Jacket','Short denim jacket for layering.','women','jacket','regular','Blue','Denim',109.90,'cropped_denim_jacket_1.png','cropped_denim_jacket_2.png','cropped_denim_jacket_3.png','cropped_denim_jacket_4.png'),
+  ('Outerwear','Black Blazer Jacket','Black blazer jacket for formal outfit.','unisex','jacket','slim','Black','Polyester',119.90,'black_blazer_jacket_1.png','black_blazer_jacket_2.png','black_blazer_jacket_3.png','black_blazer_jacket_4.png'),
+  ('Outerwear','Varsity Jacket','Varsity jacket for street casual look.','unisex','jacket','regular','Navy','Cotton',115.90,'varsity_jacket_1.png','varsity_jacket_2.png','varsity_jacket_3.png','varsity_jacket_4.png'),
+  ('Outerwear','Beige Short Jacket','Beige short jacket for soft layering style.','women','jacket','regular','Beige','Polyester',112.90,'beige_short_jacket_1.png','beige_short_jacket_2.png','beige_short_jacket_3.png','beige_short_jacket_4.png'),
+
+  ('Outerwear','Oversize Grey Hoodie','Oversize hoodie for daily comfy wear.','unisex','hoodie','oversized','Grey','Fleece',79.90,'oversize_grey_hoodie_1.png','oversize_grey_hoodie_2.png','oversize_grey_hoodie_3.png','oversize_grey_hoodie_4.png'),
+  ('Outerwear','Zip Up Hoodie','Zip hoodie for active casual look.','unisex','hoodie','regular','Black','Fleece',82.90,'zip_up_hoodie_1.png','zip_up_hoodie_2.png','zip_up_hoodie_3.png','zip_up_hoodie_4.png'),
+  ('Outerwear','Printed Street Hoodie','Printed hoodie for streetwear outfit.','unisex','hoodie','oversized','White','Cotton',85.90,'printed_street_hoodie_1.png','printed_street_hoodie_2.png','printed_street_hoodie_3.png','printed_street_hoodie_4.png'),
+  ('Outerwear','Fleece Pullover Hoodie','Soft fleece hoodie for cold days.','unisex','hoodie','regular','Brown','Fleece',83.90,'fleece_pullover_hoodie_1.png','fleece_pullover_hoodie_2.png','fleece_pullover_hoodie_3.png','fleece_pullover_hoodie_4.png'),
+
+  ('Dress','Korean Mini Dress','Cute mini dress for Korean style outfit.','women','dress','slim','Black','Cotton',92.90,'korean_mini_dress_1.png','korean_mini_dress_2.png','korean_mini_dress_3.png','korean_mini_dress_4.png'),
+  ('Dress','White Maxi Dress','Long white dress for elegant style.','women','dress','regular','White','Linen',99.90,'white_maxi_dress_1.png','white_maxi_dress_2.png','white_maxi_dress_3.png','white_maxi_dress_4.png'),
+  ('Dress','Floral Summer Dress','Floral dress for light summer look.','women','dress','regular','Yellow','Cotton',95.90,'floral_summer_dress_1.png','floral_summer_dress_2.png','floral_summer_dress_3.png','floral_summer_dress_4.png'),
+  ('Dress','Knit Bodycon Dress','Knit bodycon dress for neat fitting style.','women','dress','slim','Brown','Knit',97.90,'knit_bodycon_dress_1.png','knit_bodycon_dress_2.png','knit_bodycon_dress_3.png','knit_bodycon_dress_4.png'),
+
+  ('Bottom','Pleated Mini Skirt','Pleated mini skirt for cute outfit.','women','skirt','slim','Black','Polyester',54.90,'pleated_mini_skirt_1.png','pleated_mini_skirt_2.png','pleated_mini_skirt_3.png','pleated_mini_skirt_4.png'),
+  ('Bottom','Satin Long Skirt','Long satin skirt for elegant style.','women','skirt','regular','Cream','Satin',62.90,'satin_long_skirt_1.png','satin_long_skirt_2.png','satin_long_skirt_3.png','satin_long_skirt_4.png'),
+  ('Bottom','Korean Tennis Skirt','Tennis skirt for Korean daily look.','women','skirt','slim','White','Cotton',56.90,'korean_tennis_skirt_1.png','korean_tennis_skirt_2.png','korean_tennis_skirt_3.png','korean_tennis_skirt_4.png'),
+  ('Bottom','High Waist Denim Skirt','Denim skirt for simple casual style.','women','skirt','regular','Blue','Denim',59.90,'high_waist_denim_skirt_1.png','high_waist_denim_skirt_2.png','high_waist_denim_skirt_3.png','high_waist_denim_skirt_4.png'),
+
+  ('Accessories','Mini Shoulder Bag','Mini shoulder bag for daily matching.','women','bag','regular','Black','Leather',59.90,'mini_shoulder_bag_1.png','mini_shoulder_bag_2.png','mini_shoulder_bag_3.png','mini_shoulder_bag_4.png'),
+  ('Accessories','Korean Tote Bag','Large tote bag for Korean casual style.','women','bag','regular','Beige','Canvas',65.90,'korean_tote_bag_1.png','korean_tote_bag_2.png','korean_tote_bag_3.png','korean_tote_bag_4.png'),
+  ('Accessories','Crossbody Sling Bag','Compact crossbody bag for daily use.','unisex','bag','regular','Brown','Leather',62.90,'crossbody_sling_bag_1.png','crossbody_sling_bag_2.png','crossbody_sling_bag_3.png','crossbody_sling_bag_4.png'),
+  ('Accessories','Formal Hand Bag','Formal hand bag for office and event.','women','bag','regular','Black','Leather',69.90,'formal_hand_bag_1.png','formal_hand_bag_2.png','formal_hand_bag_3.png','formal_hand_bag_4.png'),
+
+  ('Accessories','White Sneakers','Basic white sneakers for casual outfit.','unisex','shoes','regular','White','Canvas',89.90,'white_sneakers_1.png','white_sneakers_2.png','white_sneakers_3.png','white_sneakers_4.png'),
+  ('Accessories','Black Loafers','Black loafers for smart formal look.','unisex','shoes','regular','Black','Leather',95.90,'black_loafers_1.png','black_loafers_2.png','black_loafers_3.png','black_loafers_4.png'),
+  ('Accessories','Nude Heels','Nude heels for feminine outfit matching.','women','shoes','regular','Nude','Leather',98.90,'nude_heels_1.png','nude_heels_2.png','nude_heels_3.png','nude_heels_4.png'),
+  ('Accessories','Casual Sandals','Simple sandals for daily comfort.','women','shoes','regular','Brown','Leather',75.90,'casual_sandals_1.png','casual_sandals_2.png','casual_sandals_3.png','casual_sandals_4.png'),
+
+  ('Accessories','Classic Belt','Simple belt for outfit matching.','unisex','accessory','regular','Black','Leather',29.90,'classic_belt_1.png','classic_belt_2.png','classic_belt_3.png','classic_belt_4.png'),
+  ('Accessories','Silver Necklace','Minimal necklace for clean look.','women','accessory','regular','Silver','Alloy',35.90,'silver_necklace_1.png','silver_necklace_2.png','silver_necklace_3.png','silver_necklace_4.png'),
+  ('Accessories','Korean Baseball Cap','Cap for sporty Korean styling.','unisex','accessory','regular','Black','Cotton',27.90,'korean_cap_1.png','korean_cap_2.png','korean_cap_3.png','korean_cap_4.png'),
+  ('Accessories','Winter Scarf','Warm scarf for seasonal outfit.','unisex','accessory','regular','Grey','Wool',33.90,'winter_scarf_1.png','winter_scarf_2.png','winter_scarf_3.png','winter_scarf_4.png')
+) as p(
+  category_name, product_name, product_description, product_gender, product_type, fit_type,
+  color, material, product_price, product_pic1, product_pic2, product_pic3, product_pic4
+)
+join public.categories c
+  on c.category_name = p.category_name
+on conflict (product_name) do nothing;
+
+insert into public.product_styles (product_id, style_id)
+select
+  p.product_id,
+  s.style_id
+from public.products p
+join public.styles s
+  on s.style_name = case
+    when p.product_name ilike '%Korean%' then 'Korean'
+    when p.product_name ilike '%Office%' then 'Formal'
+    when p.product_name ilike '%Formal%' then 'European'
+    when p.product_name ilike '%Street%' then 'Streetwear'
+    when p.product_name ilike '%Ghost%' then 'Streetwear'
+    when p.product_name ilike '%Floral%' then 'Chic'
+    when p.product_name ilike '%Ribbon%' then 'Chic'
+    when p.product_name ilike '%Puff%' then 'Chic'
+    when p.product_name ilike '%Vintage%' then 'Vintage'
+    when p.product_name ilike '%Sneakers%' then 'Sporty'
+    when p.product_name ilike '%Cap%' then 'Sporty'
+    else 'Casual'
+  end
+on conflict do nothing;
+
+insert into public.product_styles (product_id, style_id)
+select
+  p.product_id,
+  s.style_id
+from public.products p
+join public.styles s
+  on s.style_name = case
+    when p.product_type in ('dress','blouse','skirt') then 'Japanese'
+    when p.product_type in ('shirt','tshirt') then 'Minimalist'
+    when p.product_type in ('pants','jeans','hoodie','jacket') then 'Casual'
+    when p.product_type in ('bag','shoes','accessory') then 'European'
+    else 'Casual'
+  end
+on conflict do nothing;
+
+insert into public.quantities (product_id, size, product_stock, product_sold)
+select p.product_id, x.size::size_enum, x.stock, 0
+from public.products p
+cross join (
+  values ('s',15), ('m',20), ('l',15)
+) as x(size, stock)
+where p.product_type in ('shirt','tshirt','blouse','pants','jeans','dress','skirt')
+on conflict (product_id, size) do nothing;
+
+insert into public.quantities (product_id, size, product_stock, product_sold)
+select p.product_id, x.size::size_enum, x.stock, 0
+from public.products p
+cross join (
+  values ('m',12), ('l',12), ('xl',10)
+) as x(size, stock)
+where p.product_type in ('jacket','hoodie')
+on conflict (product_id, size) do nothing;
+
+insert into public.quantities (product_id, size, product_stock, product_sold)
+select p.product_id, x.size::size_enum, x.stock, 0
+from public.products p
+cross join (
+  values ('s',10), ('m',12), ('l',10)
+) as x(size, stock)
+where p.product_type = 'shoes'
+on conflict (product_id, size) do nothing;
+
+insert into public.quantities (product_id, size, product_stock, product_sold)
+select p.product_id, 'free_size'::size_enum, 20, 0
+from public.products p
+where p.product_type in ('bag','accessory')
+on conflict (product_id, size) do nothing;
+
+insert into public.wishlists (user_id, product_id, added_time)
+select u.user_id, p.product_id, now()
+from (
+  values
+    ('alicia@gmail.com','Korean Crop Tee'),
+    ('bryan@gmail.com','Ghost Graphic Tee'),
+    ('cindy@gmail.com','Ribbon Blouse'),
+    ('daniel@gmail.com','Casual Cargo Pants'),
+    ('emily@gmail.com','Korean Wide Jeans'),
+    ('farah@gmail.com','Cropped Denim Jacket'),
+    ('hafiz@gmail.com','Oversize Grey Hoodie'),
+    ('ivy@gmail.com','White Maxi Dress'),
+    ('jason@gmail.com','Mini Shoulder Bag'),
+    ('admin@gmail.com','White Sneakers')
+) as x(user_email, product_name)
+join public.users u
+  on u.user_email = x.user_email
+join public.products p
+  on p.product_name = x.product_name
+on conflict (user_id, product_id) do nothing;
+
+insert into public.cart (user_id, product_id, quantity_id, quantity, added_time)
+select
+  u.user_id,
+  p.product_id,
+  q.quantity_id,
+  x.qty,
+  now()
+from (
+  values
+    ('alicia@gmail.com','Korean Crop Tee','m',1),
+    ('bryan@gmail.com','Ghost Graphic Tee','l',2),
+    ('cindy@gmail.com','Ribbon Blouse','s',1),
+    ('daniel@gmail.com','Casual Cargo Pants','m',1),
+    ('emily@gmail.com','Korean Wide Jeans','m',1),
+    ('farah@gmail.com','Cropped Denim Jacket','l',1),
+    ('hafiz@gmail.com','Oversize Grey Hoodie','xl',1),
+    ('ivy@gmail.com','White Maxi Dress','s',1),
+    ('jason@gmail.com','Mini Shoulder Bag','free_size',1),
+    ('admin@gmail.com','White Sneakers','m',1)
+) as x(user_email, product_name, size_name, qty)
+join public.users u
+  on u.user_email = x.user_email
+join public.products p
+  on p.product_name = x.product_name
+join public.quantities q
+  on q.product_id = p.product_id
+ and q.size::text = x.size_name
+on conflict (user_id, quantity_id) do nothing;
+
+insert into public.addresses (
+  address_id,
+  user_id,
+  address_name,
+  recipient_name,
+  phone,
+  address_line1,
+  address_line2,
+  city,
+  state,
+  post_code,
+  country,
+  is_default
+)
+select
+  x.address_id::uuid,
+  u.user_id,
+  x.address_name,
+  x.recipient_name,
+  x.phone,
+  x.address_line1,
+  x.address_line2,
+  x.city,
+  x.state,
+  x.post_code,
+  'Malaysia',
+  x.is_default
+from (
+  values
+    ('00000000-0000-0000-0000-000000000101','alicia@gmail.com','Home','Alicia Tan','0122222222','No 12, Jalan Setia 1','Taman Setia','Kuala Lumpur','Wilayah Persekutuan','50000',true),
+    ('00000000-0000-0000-0000-000000000102','bryan@gmail.com','Home','Bryan Lee','0123333333','No 23, Jalan Maju 2','Taman Maju','Petaling Jaya','Selangor','46000',true),
+    ('00000000-0000-0000-0000-000000000103','cindy@gmail.com','Home','Cindy Wong','0124444444','No 34, Jalan Indah 3','Taman Indah','Subang Jaya','Selangor','47600',true),
+    ('00000000-0000-0000-0000-000000000104','daniel@gmail.com','Home','Daniel Lim','0125555555','No 45, Jalan Jaya 4','Bandar Jaya','Johor Bahru','Johor','80000',true),
+    ('00000000-0000-0000-0000-000000000105','emily@gmail.com','Home','Emily Goh','0126666666','No 56, Jalan Bukit 5','Taman Bukit','Ipoh','Perak','30000',true),
+    ('00000000-0000-0000-0000-000000000106','farah@gmail.com','Home','Farah Noor','0127777777','No 67, Jalan Sentosa 6','Taman Sentosa','Shah Alam','Selangor','40100',true),
+    ('00000000-0000-0000-0000-000000000107','hafiz@gmail.com','Home','Hafiz Rahman','0128888888','No 78, Jalan Damai 7','Taman Damai','Seremban','Negeri Sembilan','70000',true),
+    ('00000000-0000-0000-0000-000000000108','ivy@gmail.com','Home','Ivy Chan','0129999999','No 89, Jalan Emas 8','Taman Emas','Melaka Tengah','Melaka','75000',true),
+    ('00000000-0000-0000-0000-000000000109','jason@gmail.com','Home','Jason Khoo','0131111111','No 90, Jalan Melur 9','Taman Melur','Penang','Pulau Pinang','10400',true),
+    ('00000000-0000-0000-0000-000000000110','admin@gmail.com','Office','Admin User','0121111111','No 1, Jalan Admin 10','Admin Tower','Kuala Lumpur','Wilayah Persekutuan','50450',true)
+) as x(
+  address_id, user_email, address_name, recipient_name, phone,
+  address_line1, address_line2, city, state, post_code, is_default
+)
+join public.users u
+  on u.user_email = x.user_email
+on conflict (address_id) do nothing;
+
+insert into public.deliveries (
+  delivery_id,
+  address_id,
+  delivery_fee,
+  delivery_status,
+  estimated_date,
+  delivered_date
+)
+values
+  ('00000000-0000-0000-0000-000000000201','00000000-0000-0000-0000-000000000101',8.00,'pending','2026-04-01',null),
+  ('00000000-0000-0000-0000-000000000202','00000000-0000-0000-0000-000000000102',8.00,'in_transit','2026-04-01',null),
+  ('00000000-0000-0000-0000-000000000203','00000000-0000-0000-0000-000000000103',8.00,'delivered','2026-03-25','2026-03-25'),
+  ('00000000-0000-0000-0000-000000000204','00000000-0000-0000-0000-000000000104',10.00,'pending','2026-04-03',null),
+  ('00000000-0000-0000-0000-000000000205','00000000-0000-0000-0000-000000000105',10.00,'in_transit','2026-04-04',null),
+  ('00000000-0000-0000-0000-000000000206','00000000-0000-0000-0000-000000000106',8.00,'delivered','2026-03-23','2026-03-23'),
+  ('00000000-0000-0000-0000-000000000207','00000000-0000-0000-0000-000000000107',8.00,'pending','2026-04-05',null),
+  ('00000000-0000-0000-0000-000000000208','00000000-0000-0000-0000-000000000108',8.00,'delivered','2026-03-22','2026-03-22'),
+  ('00000000-0000-0000-0000-000000000209','00000000-0000-0000-0000-000000000109',12.00,'pending','2026-04-06',null),
+  ('00000000-0000-0000-0000-000000000210','00000000-0000-0000-0000-000000000110',5.00,'delivered','2026-03-20','2026-03-20')
+on conflict (delivery_id) do nothing;
+
+insert into public.orders (
+  order_id,
+  user_id,
+  delivery_id,
+  order_date,
+  orders_status,
+  order_subtotal
+)
+select
+  x.order_id::uuid,
+  u.user_id,
+  x.delivery_id::uuid,
+  x.order_date::timestamptz,
+  x.orders_status::order_status_enum,
+  x.order_subtotal
+from (
+  values
+    ('00000000-0000-0000-0000-000000000301','alicia@gmail.com','00000000-0000-0000-0000-000000000201','2026-03-30 10:00:00+08','pending',42.90),
+    ('00000000-0000-0000-0000-000000000302','bryan@gmail.com','00000000-0000-0000-0000-000000000202','2026-03-29 11:00:00+08','confirmed',91.80),
+    ('00000000-0000-0000-0000-000000000303','cindy@gmail.com','00000000-0000-0000-0000-000000000203','2026-03-24 12:00:00+08','delivered',59.90),
+    ('00000000-0000-0000-0000-000000000304','daniel@gmail.com','00000000-0000-0000-0000-000000000204','2026-03-30 09:30:00+08','processing',82.90),
+    ('00000000-0000-0000-0000-000000000305','emily@gmail.com','00000000-0000-0000-0000-000000000205','2026-03-31 14:00:00+08','shipped',89.90),
+    ('00000000-0000-0000-0000-000000000306','farah@gmail.com','00000000-0000-0000-0000-000000000206','2026-03-22 15:00:00+08','delivered',109.90),
+    ('00000000-0000-0000-0000-000000000307','hafiz@gmail.com','00000000-0000-0000-0000-000000000207','2026-03-31 16:00:00+08','processing',79.90),
+    ('00000000-0000-0000-0000-000000000308','ivy@gmail.com','00000000-0000-0000-0000-000000000208','2026-03-21 17:00:00+08','delivered',99.90),
+    ('00000000-0000-0000-0000-000000000309','jason@gmail.com','00000000-0000-0000-0000-000000000209','2026-04-01 18:00:00+08','pending',59.90),
+    ('00000000-0000-0000-0000-000000000310','admin@gmail.com','00000000-0000-0000-0000-000000000210','2026-03-19 19:00:00+08','delivered',89.90)
+) as x(order_id, user_email, delivery_id, order_date, orders_status, order_subtotal)
+join public.users u
+  on u.user_email = x.user_email
+on conflict (order_id) do nothing;
+
+insert into public.order_details (
+  order_id,
+  product_id,
+  quantity_id,
+  quantity,
+  unit_price
+)
+select
+  x.order_id::uuid,
+  p.product_id,
+  q.quantity_id,
+  x.qty,
+  x.unit_price
+from (
+  values
+    ('00000000-0000-0000-0000-000000000301','Korean Crop Tee','m',1,42.90),
+    ('00000000-0000-0000-0000-000000000302','Ghost Graphic Tee','l',2,45.90),
+    ('00000000-0000-0000-0000-000000000303','Ribbon Blouse','s',1,59.90),
+    ('00000000-0000-0000-0000-000000000304','Casual Cargo Pants','m',1,82.90),
+    ('00000000-0000-0000-0000-000000000305','Korean Wide Jeans','m',1,89.90),
+    ('00000000-0000-0000-0000-000000000306','Cropped Denim Jacket','l',1,109.90),
+    ('00000000-0000-0000-0000-000000000307','Oversize Grey Hoodie','xl',1,79.90),
+    ('00000000-0000-0000-0000-000000000308','White Maxi Dress','s',1,99.90),
+    ('00000000-0000-0000-0000-000000000309','Mini Shoulder Bag','free_size',1,59.90),
+    ('00000000-0000-0000-0000-000000000310','White Sneakers','m',1,89.90)
+) as x(order_id, product_name, size_name, qty, unit_price)
+join public.products p
+  on p.product_name = x.product_name
+join public.quantities q
+  on q.product_id = p.product_id
+ and q.size::text = x.size_name
+on conflict do nothing;
+
+insert into public.payment_methods (
+  method_id,
+  user_id,
+  method_type,
+  card_type,
+  last_four,
+  cardholder_name,
+  expiry_month,
+  expiry_year
+)
+select
+  x.method_id::uuid,
+  u.user_id,
+  x.method_type::payment_method_enum,
+  x.card_type,
+  x.last_four,
+  x.cardholder_name,
+  x.expiry_month,
+  x.expiry_year
+from (
+  values
+    ('00000000-0000-0000-0000-000000000401','alicia@gmail.com','card','Visa','1111','Alicia Tan',12,2028),
+    ('00000000-0000-0000-0000-000000000402','bryan@gmail.com','card','Master','2222','Bryan Lee',11,2027),
+    ('00000000-0000-0000-0000-000000000403','cindy@gmail.com','ewallet',null,null,'Cindy Wong',null,null),
+    ('00000000-0000-0000-0000-000000000404','daniel@gmail.com','fpx',null,null,'Daniel Lim',null,null),
+    ('00000000-0000-0000-0000-000000000405','emily@gmail.com','card','Visa','3333','Emily Goh',10,2029),
+    ('00000000-0000-0000-0000-000000000406','farah@gmail.com','card','Master','4444','Farah Noor',9,2027),
+    ('00000000-0000-0000-0000-000000000407','hafiz@gmail.com','ewallet',null,null,'Hafiz Rahman',null,null),
+    ('00000000-0000-0000-0000-000000000408','ivy@gmail.com','card','Visa','5555','Ivy Chan',8,2028),
+    ('00000000-0000-0000-0000-000000000409','jason@gmail.com','fpx',null,null,'Jason Khoo',null,null),
+    ('00000000-0000-0000-0000-000000000410','admin@gmail.com','card','Visa','9999','Admin User',1,2030)
+) as x(method_id, user_email, method_type, card_type, last_four, cardholder_name, expiry_month, expiry_year)
+join public.users u
+  on u.user_email = x.user_email
+on conflict (method_id) do nothing;
+
+insert into public.payments (
+  payment_id,
+  order_id,
+  user_id,
+  tax,
+  discount,
+  total_amount,
+  payment_method,
+  payment_status,
+  payment_date
+)
+select
+  x.payment_id::uuid,
+  x.order_id::uuid,
+  u.user_id,
+  x.tax,
+  x.discount,
+  x.total_amount,
+  x.payment_method::payment_method_enum,
+  x.payment_status::payment_status_enum,
+  x.payment_date::timestamptz
+from (
+  values
+    ('00000000-0000-0000-0000-000000000501','00000000-0000-0000-0000-000000000301','alicia@gmail.com',2.00,0.00,44.90,'card','pending','2026-03-30 10:05:00+08'),
+    ('00000000-0000-0000-0000-000000000502','00000000-0000-0000-0000-000000000302','bryan@gmail.com',4.00,0.00,95.80,'card','paid','2026-03-29 11:05:00+08'),
+    ('00000000-0000-0000-0000-000000000503','00000000-0000-0000-0000-000000000303','cindy@gmail.com',2.00,0.00,61.90,'ewallet','paid','2026-03-24 12:05:00+08'),
+    ('00000000-0000-0000-0000-000000000504','00000000-0000-0000-0000-000000000304','daniel@gmail.com',3.00,0.00,85.90,'fpx','paid','2026-03-30 09:35:00+08'),
+    ('00000000-0000-0000-0000-000000000505','00000000-0000-0000-0000-000000000305','emily@gmail.com',3.00,5.00,87.90,'card','paid','2026-03-31 14:05:00+08'),
+    ('00000000-0000-0000-0000-000000000506','00000000-0000-0000-0000-000000000306','farah@gmail.com',4.00,0.00,113.90,'card','paid','2026-03-22 15:05:00+08'),
+    ('00000000-0000-0000-0000-000000000507','00000000-0000-0000-0000-000000000307','hafiz@gmail.com',3.00,0.00,82.90,'ewallet','paid','2026-03-31 16:05:00+08'),
+    ('00000000-0000-0000-0000-000000000508','00000000-0000-0000-0000-000000000308','ivy@gmail.com',3.00,10.00,92.90,'card','paid','2026-03-21 17:05:00+08'),
+    ('00000000-0000-0000-0000-000000000509','00000000-0000-0000-0000-000000000309','jason@gmail.com',2.00,0.00,61.90,'fpx','pending','2026-04-01 18:05:00+08'),
+    ('00000000-0000-0000-0000-000000000510','00000000-0000-0000-0000-000000000310','admin@gmail.com',3.00,0.00,92.90,'card','paid','2026-03-19 19:05:00+08')
+) as x(payment_id, order_id, user_email, tax, discount, total_amount, payment_method, payment_status, payment_date)
+join public.users u
+  on u.user_email = x.user_email
+on conflict (payment_id) do nothing;
+
+insert into public.ai_recommendations (
+  user_id,
+  height_cm,
+  weight_kg,
+  requested_style_id,
+  recommended_products,
+  created_at
+)
+select
+  u.user_id,
+  u.height_cm,
+  u.weight_kg,
+  s.style_id,
+  x.recommended_products,
+  now()
+from (
+  values
+    ('alicia@gmail.com','Korean','["Korean Crop Tee","Korean Wide Jeans","Mini Shoulder Bag"]'::jsonb),
+    ('bryan@gmail.com','Streetwear','["Ghost Graphic Tee","Casual Cargo Pants","Varsity Jacket"]'::jsonb),
+    ('cindy@gmail.com','Chic','["Ribbon Blouse","Pleated Mini Skirt","Silver Necklace"]'::jsonb),
+    ('daniel@gmail.com','Casual','["Blue Stripe Shirt","Black Jogger Pants","White Sneakers"]'::jsonb),
+    ('emily@gmail.com','Japanese','["Floral Chiffon Blouse","Satin Long Skirt","Crossbody Sling Bag"]'::jsonb),
+    ('farah@gmail.com','Minimalist','["White Office Shirt","Office Straight Pants","Formal Hand Bag"]'::jsonb),
+    ('hafiz@gmail.com','Sporty','["Oversize Grey Hoodie","Black Jogger Pants","Korean Baseball Cap"]'::jsonb),
+    ('ivy@gmail.com','Vintage','["White Maxi Dress","Classic Belt","Winter Scarf"]'::jsonb),
+    ('jason@gmail.com','European','["Black Blazer Jacket","Black Loafers","Formal Hand Bag"]'::jsonb),
+    ('admin@gmail.com','Formal','["Satin Formal Shirt","Office Straight Pants","Black Loafers"]'::jsonb)
+) as x(user_email, style_name, recommended_products)
+join public.users u
+  on u.user_email = x.user_email
+left join public.styles s
+  on s.style_name = x.style_name;
+
+update public.users
+set role = 'admin'
+where user_email = 'admin@gmail.com';
