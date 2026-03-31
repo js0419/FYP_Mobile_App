@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../widgets/custom_app_bar.dart';
 import 'product_details.dart';
+import '../../services/product_image_service.dart';
 
 class ProductsPage extends StatefulWidget {
   final String? gender; // Optional gender parameter
@@ -104,7 +105,7 @@ class _ProductsPageState extends State<ProductsPage> {
                   itemBuilder: (context, index) {
                     final product = products[index];
                     final priceStr = product['product_price']?.toString() ?? '0.00';
-                    final imageUrl = product['product_pic1'];
+                    final imageUrl = ProductImageService.getPublicUrl(product['product_pic1']);
                     final productName = (product['product_name'] ?? 'Unknown').toString().toUpperCase();
 
                     return GestureDetector(

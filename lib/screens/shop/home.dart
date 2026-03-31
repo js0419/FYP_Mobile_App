@@ -3,7 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../../widgets/custom_footer.dart';
 import 'product_details.dart';
-import 'product.dart'; // Import the products page
+import 'product.dart';
+import '../../services/product_image_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -204,7 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
             itemBuilder: (context, index) {
               final product = products[index];
               final priceStr = product['product_price']?.toString() ?? '0.00';
-              final imageUrl = product['product_pic1'];
+              final imageUrl = ProductImageService.getPublicUrl(product['product_pic1']);
               final productName = (product['product_name'] ?? 'Unknown').toString().toUpperCase();
 
               return GestureDetector(
