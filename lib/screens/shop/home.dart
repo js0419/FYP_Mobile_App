@@ -36,31 +36,29 @@ class _HomeScreenState extends State<HomeScreen> {
       drawer: _buildDrawer(),
       body: SingleChildScrollView(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center, // Center align for high-fashion feel
           children: [
             // 1. Fashion Hero Banner
             _buildFashionBanner(),
 
-            const SizedBox(height: 32),
+            const SizedBox(height: 50),
 
-            // 2. Hot Sales Title
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16.0),
-              child: Text(
-                '🔥 Hot Sales',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.2,
-                ),
+            // 2. Minimalist Section Title
+            const Text(
+              'TRENDING NOW',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 3.0, // Wide spacing for luxury look
+                color: Colors.black,
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
 
             // 3. Hot Sales Grid (Fetched from Supabase)
             _buildHotSalesGrid(),
 
-            const SizedBox(height: 40),
+            const SizedBox(height: 60),
 
             // 4. Reusable Footer
             const CustomFooter(),
@@ -74,24 +72,27 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildDrawer() {
     return Drawer(
+      backgroundColor: Colors.white,
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
           const DrawerHeader(
             decoration: BoxDecoration(color: Colors.black),
             child: Text(
-              'Categories',
-              style: TextStyle(color: Colors.white, fontSize: 24),
+              'COLLECTIONS',
+              style: TextStyle(
+                color: Colors.white, 
+                fontSize: 20, 
+                letterSpacing: 2.0,
+              ),
             ),
           ),
           ListTile(
-            leading: const Icon(Icons.checkroom),
-            title: const Text('Men'),
+            title: const Text('WOMEN', style: TextStyle(letterSpacing: 1.5, fontSize: 14)),
             onTap: () {},
           ),
           ListTile(
-            leading: const Icon(Icons.checkroom),
-            title: const Text('Women'),
+            title: const Text('MEN', style: TextStyle(letterSpacing: 1.5, fontSize: 14)),
             onTap: () {},
           ),
         ],
@@ -102,32 +103,27 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildFashionBanner() {
     return Container(
       width: double.infinity,
-      height: 250,
+      height: 500, // Taller image for editorial look
       decoration: const BoxDecoration(
         image: DecorationImage(
-          // Using a placeholder fashion image from Unsplash
+          // Black and white or high-contrast fashion image
           image: NetworkImage(
               'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80'),
           fit: BoxFit.cover,
+          alignment: Alignment.topCenter,
         ),
       ),
       child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.black.withOpacity(0.6), Colors.transparent],
-            begin: Alignment.bottomCenter,
-            end: Alignment.topCenter,
-          ),
-        ),
-        padding: const EdgeInsets.all(20.0),
-        alignment: Alignment.bottomLeft,
+        color: Colors.black.withOpacity(0.15), // Very subtle dark overlay
+        alignment: Alignment.center,
         child: const Text(
-          'New Arrivals\nSpring Collection',
+          'NEW COLLECTION',
+          textAlign: TextAlign.center,
           style: TextStyle(
             color: Colors.white,
             fontSize: 28,
-            fontWeight: FontWeight.bold,
-            height: 1.2,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 5.0, // ZARA-style wide spacing
           ),
         ),
       ),
@@ -142,13 +138,13 @@ class _HomeScreenState extends State<HomeScreen> {
           return const Center(
             child: Padding(
               padding: EdgeInsets.all(32.0),
-              child: CircularProgressIndicator(color: Colors.black),
+              child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2),
             ),
           );
         }
 
         if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
+          return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.black)));
         }
 
         final products = snapshot.data;
@@ -157,93 +153,74 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Padding(
               padding: EdgeInsets.all(32.0),
               child: Text(
-                'No products available right now.\n(Check your Supabase database data)',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey),
+                'NO PRODUCTS AVAILABLE',
+                style: TextStyle(color: Colors.black54, letterSpacing: 2.0),
               ),
             ),
           );
         }
 
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            childAspectRatio: 0.70, // Adjust for taller cards
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-          ),
-          itemCount: products.length,
-          itemBuilder: (context, index) {
-            final product = products[index];
-            final priceStr = product['product_price']?.toString() ?? '0.00';
-            final imageUrl = product['product_pic1'];
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: 0.55, // Very tall ratio for model photography
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 32, // More breathing room between rows
+            ),
+            itemCount: products.length,
+            itemBuilder: (context, index) {
+              final product = products[index];
+              final priceStr = product['product_price']?.toString() ?? '0.00';
+              final imageUrl = product['product_pic1'];
+              final productName = (product['product_name'] ?? 'Unknown').toString().toUpperCase();
 
-            return Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withOpacity(0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
+              return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Product Image
+                  // Product Image (Sharp corners, no shadow)
                   Expanded(
-                    child: ClipRRect(
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                      child: Container(
-                        width: double.infinity,
-                        color: Colors.grey[200],
-                        child: imageUrl != null && imageUrl.toString().isNotEmpty
-                            ? Image.network(
-                                imageUrl,
-                                fit: BoxFit.cover,
-                                errorBuilder: (c, e, s) => const Icon(Icons.broken_image, color: Colors.grey, size: 40),
-                              )
-                            : const Icon(Icons.image_not_supported, color: Colors.grey, size: 40),
-                      ),
+                    child: Container(
+                      width: double.infinity,
+                      color: const Color(0xFFF5F5F5), // Light grey placeholder
+                      child: imageUrl != null && imageUrl.toString().isNotEmpty
+                          ? Image.network(
+                              imageUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (c, e, s) => const Icon(Icons.broken_image, color: Colors.grey, size: 40),
+                            )
+                          : const Icon(Icons.image_not_supported, color: Colors.grey, size: 40),
                     ),
                   ),
-                  // Product Details
-                  Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          product['product_name'] ?? 'Unknown Product',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'RM $priceStr',
-                          style: const TextStyle(
-                            color: Colors.black87,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
+                  const SizedBox(height: 12),
+                  // Product Details (Minimalist typography)
+                  Text(
+                    productName,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.w400,
+                      fontSize: 12,
+                      letterSpacing: 1.0,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'RM $priceStr',
+                    style: const TextStyle(
+                      color: Colors.black87,
+                      fontWeight: FontWeight.w300,
+                      fontSize: 12,
                     ),
                   ),
                 ],
-              ),
-            );
-          },
+              );
+            },
+          ),
         );
       },
     );
