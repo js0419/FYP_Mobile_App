@@ -4,7 +4,9 @@ import '../../widgets/custom_app_bar.dart';
 import 'product_details.dart';
 
 class ProductsPage extends StatefulWidget {
-  const ProductsPage({Key? key}) : super(key: key);
+  final String? gender; // Optional gender parameter
+
+  const ProductsPage({super.key, this.gender});
 
   @override
   State<ProductsPage> createState() => _ProductsPageState();
@@ -16,26 +18,50 @@ class _ProductsPageState extends State<ProductsPage> {
   @override
   void initState() {
     super.initState();
-    // Fetch ALL active products
-    _productsFuture = Supabase.instance.client
-        .from('products')
-        .select('*')
-        .eq('product_status', 'active');
+    _fetchProducts();
   }
+
+  void _fetchProducts() {
+  _productsFuture = () async {
+    try {
+      var query = Supabase.instance.client
+          .from('products')
+          .select('*')
+          .eq('product_status', 'active');
+
+      if (widget.gender != null) {
+        query = query.eq('product_gender', widget.gender!);
+      }
+
+      final data = await query;
+      debugPrint('Products fetched: ${data.length}');
+      return List<Map<String, dynamic>>.from(data);
+    } catch (e, st) {
+      debugPrint('Products fetch error: $e');
+      debugPrintStack(stackTrace: st);
+      rethrow;
+    }
+  }();
+}
 
   @override
   Widget build(BuildContext context) {
+    // Determine the page title based on the filter
+    String pageTitle = 'ALL COLLECTION';
+    if (widget.gender == 'women') pageTitle = 'WOMEN COLLECTION';
+    if (widget.gender == 'men') pageTitle = 'MEN COLLECTION';
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: const CustomAppBar(),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24.0),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24.0),
             child: Text(
-              'ALL COLLECTION',
-              style: TextStyle(
+              pageTitle,
+              style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 3.0,
@@ -58,10 +84,10 @@ class _ProductsPageState extends State<ProductsPage> {
 
                 final products = snapshot.data;
                 if (products == null || products.isEmpty) {
-                  return const Center(
+                  return Center(
                     child: Text(
-                      'NO PRODUCTS FOUND',
-                      style: TextStyle(letterSpacing: 2.0, color: Colors.black54),
+                      'NO PRODUCTS FOUND FOR $pageTitle',
+                      style: const TextStyle(letterSpacing: 2.0, color: Colors.black54),
                     ),
                   );
                 }
@@ -70,7 +96,7 @@ class _ProductsPageState extends State<ProductsPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
-                    childAspectRatio: 0.55, // Tall fashion aspect ratio
+                    childAspectRatio: 0.55,
                     crossAxisSpacing: 16,
                     mainAxisSpacing: 32,
                   ),
@@ -83,7 +109,6 @@ class _ProductsPageState extends State<ProductsPage> {
 
                     return GestureDetector(
                       onTap: () {
-                        // Navigate to Details Page
                         Navigator.push(
                           context,
                           MaterialPageRoute(

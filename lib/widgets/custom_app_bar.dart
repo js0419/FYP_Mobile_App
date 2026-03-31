@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../screens/shop/home.dart'; // Import your Home Screen
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   const CustomAppBar({Key? key}) : super(key: key);
@@ -13,16 +14,30 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
       backgroundColor: Colors.white,
       iconTheme: const IconThemeData(color: Colors.black),
       
-      // Logo beside the sidebar (hamburger menu is handled automatically by Scaffold)
-      title: Row(
-        children: const [
-          Icon(Icons.shopping_bag, color: Colors.black), 
-          SizedBox(width: 8),
-          Text(
-            'FashionAI', 
-            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-          ),
-        ],
+      // Make the Title/Logo clickable
+      title: GestureDetector(
+        onTap: () {
+          // Navigate to Home Page and clear previous page history
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
+            (route) => false,
+          );
+        },
+        child: Row(
+          children: const [
+            Icon(Icons.shopping_bag, color: Colors.black), 
+            SizedBox(width: 8),
+            Text(
+              'FashionAI', 
+              style: TextStyle(
+                color: Colors.black, 
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.0,
+              ),
+            ),
+          ],
+        ),
       ),
       
       // Right top corner icons

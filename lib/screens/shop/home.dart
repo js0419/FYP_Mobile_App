@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../../widgets/custom_footer.dart';
+import 'product_details.dart';
+import 'product.dart'; // Import the products page
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -20,47 +22,63 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _fetchHotSales() {
-    // Fetch 4 active products to display in the Hot Sales section
-    _hotSalesFuture = Supabase.instance.client
-        .from('products')
-        .select('product_id, product_name, product_price, product_pic1')
-        .eq('product_status', 'active')
-        .limit(4);
-  }
+  _hotSalesFuture = () async {
+    try {
+      final data = await Supabase.instance.client
+          .from('products')
+          .select('*')
+          .eq('product_status', 'active')
+          .limit(4);
+
+      debugPrint('Hot sales fetched: ${data.length}');
+      return List<Map<String, dynamic>>.from(data);
+    } catch (e, st) {
+      debugPrint('Hot sales fetch error: $e');
+      debugPrintStack(stackTrace: st);
+      rethrow;
+    }
+  }();
+}
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: const CustomAppBar(),
-      drawer: _buildDrawer(),
+      drawer: _buildDrawer(context), // Pass context here
       body: SingleChildScrollView(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center, // Center align for high-fashion feel
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // 1. Fashion Hero Banner
-            _buildFashionBanner(),
+            // 1. Fashion Hero Banner (Now Clickable)
+            GestureDetector(
+              onTap: () {
+                // Clicking banner goes to ALL products
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const ProductsPage()),
+                );
+              },
+              child: _buildFashionBanner(),
+            ),
 
             const SizedBox(height: 50),
 
-            // 2. Minimalist Section Title
             const Text(
               'TRENDING NOW',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                letterSpacing: 3.0, // Wide spacing for luxury look
+                letterSpacing: 3.0,
                 color: Colors.black,
               ),
             ),
             const SizedBox(height: 24),
 
-            // 3. Hot Sales Grid (Fetched from Supabase)
             _buildHotSalesGrid(),
 
             const SizedBox(height: 60),
 
-            // 4. Reusable Footer
             const CustomFooter(),
           ],
         ),
@@ -70,7 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // --- UI Builder Methods ---
 
-  Widget _buildDrawer() {
+  Widget _buildDrawer(BuildContext context) {
     return Drawer(
       backgroundColor: Colors.white,
       child: ListView(
@@ -89,11 +107,23 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           ListTile(
             title: const Text('WOMEN', style: TextStyle(letterSpacing: 1.5, fontSize: 14)),
-            onTap: () {},
+            onTap: () {
+              Navigator.pop(context); // Close the drawer first
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ProductsPage(gender: 'women')),
+              );
+            },
           ),
           ListTile(
             title: const Text('MEN', style: TextStyle(letterSpacing: 1.5, fontSize: 14)),
-            onTap: () {},
+            onTap: () {
+              Navigator.pop(context); // Close the drawer first
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ProductsPage(gender: 'men')),
+              );
+            },
           ),
         ],
       ),
@@ -103,10 +133,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildFashionBanner() {
     return Container(
       width: double.infinity,
-      height: 500, // Taller image for editorial look
+      height: 500,
       decoration: const BoxDecoration(
         image: DecorationImage(
-          // Black and white or high-contrast fashion image
           image: NetworkImage(
               'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80'),
           fit: BoxFit.cover,
@@ -114,7 +143,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       child: Container(
-        color: Colors.black.withOpacity(0.15), // Very subtle dark overlay
+        color: Colors.black.withOpacity(0.15),
         alignment: Alignment.center,
         child: const Text(
           'NEW COLLECTION',
@@ -123,7 +152,7 @@ class _HomeScreenState extends State<HomeScreen> {
             color: Colors.white,
             fontSize: 28,
             fontWeight: FontWeight.w500,
-            letterSpacing: 5.0, // ZARA-style wide spacing
+            letterSpacing: 5.0,
           ),
         ),
       ),
@@ -167,9 +196,9 @@ class _HomeScreenState extends State<HomeScreen> {
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
-              childAspectRatio: 0.55, // Very tall ratio for model photography
+              childAspectRatio: 0.55,
               crossAxisSpacing: 16,
-              mainAxisSpacing: 32, // More breathing room between rows
+              mainAxisSpacing: 32,
             ),
             itemCount: products.length,
             itemBuilder: (context, index) {
@@ -178,46 +207,55 @@ class _HomeScreenState extends State<HomeScreen> {
               final imageUrl = product['product_pic1'];
               final productName = (product['product_name'] ?? 'Unknown').toString().toUpperCase();
 
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Product Image (Sharp corners, no shadow)
-                  Expanded(
-                    child: Container(
-                      width: double.infinity,
-                      color: const Color(0xFFF5F5F5), // Light grey placeholder
-                      child: imageUrl != null && imageUrl.toString().isNotEmpty
-                          ? Image.network(
-                              imageUrl,
-                              fit: BoxFit.cover,
-                              errorBuilder: (c, e, s) => const Icon(Icons.broken_image, color: Colors.grey, size: 40),
-                            )
-                          : const Icon(Icons.image_not_supported, color: Colors.grey, size: 40),
+              return GestureDetector(
+                onTap: () {
+                  // Make Hot Sales items clickable too!
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ProductDetailsPage(product: product),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  // Product Details (Minimalist typography)
-                  Text(
-                    productName,
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontWeight: FontWeight.w400,
-                      fontSize: 12,
-                      letterSpacing: 1.0,
+                  );
+                },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Container(
+                        width: double.infinity,
+                        color: const Color(0xFFF5F5F5),
+                        child: imageUrl != null && imageUrl.toString().isNotEmpty
+                            ? Image.network(
+                                imageUrl,
+                                fit: BoxFit.cover,
+                                errorBuilder: (c, e, s) => const Icon(Icons.broken_image, color: Colors.grey, size: 40),
+                              )
+                            : const Icon(Icons.image_not_supported, color: Colors.grey, size: 40),
+                      ),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'RM $priceStr',
-                    style: const TextStyle(
-                      color: Colors.black87,
-                      fontWeight: FontWeight.w300,
-                      fontSize: 12,
+                    const SizedBox(height: 12),
+                    Text(
+                      productName,
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.w400,
+                        fontSize: 12,
+                        letterSpacing: 1.0,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 4),
+                    Text(
+                      'RM $priceStr',
+                      style: const TextStyle(
+                        color: Colors.black87,
+                        fontWeight: FontWeight.w300,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
               );
             },
           ),
