@@ -47,6 +47,7 @@ class _ProductsPageState extends State<ProductsPage> {
   String _selectedGender = 'ALL';
   String _selectedType = 'ALL';
   String _selectedSort = 'DEFAULT';
+  bool _showFilters = false;
 
   @override
   void initState() {
@@ -285,7 +286,9 @@ class _ProductsPageState extends State<ProductsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
     final pageTitle = _getPageTitle();
+    final isSmallScreen = screenWidth < 600;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -295,35 +298,37 @@ class _ProductsPageState extends State<ProductsPage> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+            padding: EdgeInsets.fromLTRB(
+              isSmallScreen ? 12 : 16,
+              isSmallScreen ? 16 : 24,
+              isSmallScreen ? 12 : 16,
+              isSmallScreen ? 8 : 12,
+            ),
             child: Column(
               children: [
                 Text(
                   pageTitle,
-                  style: const TextStyle(
-                    fontSize: 16,
+                  style: TextStyle(
+                    fontSize: isSmallScreen ? 14 : 16,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 3.0,
                     color: Colors.black,
                   ),
                 ),
-                const SizedBox(height: 20),
-                _buildSearchBar(),
-                const SizedBox(height: 20),
-                SizedBox(
-                  height: 78,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: [
-                      SizedBox(width: 150, child: _buildGenderDropdown()),
-                      const SizedBox(width: 12),
-                      SizedBox(width: 150, child: _buildTypeDropdown()),
-                      SizedBox(width: 170, child: _buildSortDropdown()),
-                      const SizedBox(width: 12),
-                      _buildResetButton(),
-                    ],
+                SizedBox(height: isSmallScreen ? 16 : 20),
+                _buildSearchBar(isSmallScreen),
+                SizedBox(height: isSmallScreen ? 12 : 20),
+                // Filters - Collapsible on small screens
+                if (isSmallScreen)
+                  _buildMobileFilterToggle()
+                else
+                  _buildDesktopFilters(isSmallScreen),
+                // Mobile filters expanded view
+                if (isSmallScreen && _showFilters)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: _buildMobileFiltersExpanded(),
                   ),
-                ),
               ],
             ),
           ),
@@ -373,86 +378,10 @@ class _ProductsPageState extends State<ProductsPage> {
                   );
                 }
 
-                return GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    childAspectRatio: 0.52,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 28,
-                  ),
-                  itemCount: filteredProducts.length,
-                  itemBuilder: (context, index) {
-                    final product = filteredProducts[index];
-                    final priceStr =
-                        product['product_price']?.toString() ?? '0.00';
-                    final imageUrl = ProductImageService.getPrimaryImageUrl(
-                      product,
-                    );
-                    final productName = (product['product_name'] ?? 'Unknown')
-                        .toString()
-                        .toUpperCase();
-                    final productType = (product['product_type'] ?? '')
-                        .toString()
-                        .toUpperCase();
-
-                    return GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                ProductDetailsPage(product: product),
-                          ),
-                        );
-                      },
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Container(
-                              width: double.infinity,
-                              color: const Color(0xFFF5F5F5),
-                              child: _buildProductImage(imageUrl),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          if (productType.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 4),
-                              child: Text(
-                                productType,
-                                style: const TextStyle(
-                                  color: Colors.black54,
-                                  fontSize: 10,
-                                  letterSpacing: 1.2,
-                                ),
-                              ),
-                            ),
-                          Text(
-                            productName,
-                            style: const TextStyle(
-                              color: Colors.black,
-                              fontWeight: FontWeight.w400,
-                              fontSize: 12,
-                              letterSpacing: 1.0,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'RM $priceStr',
-                            style: const TextStyle(
-                              color: Colors.black87,
-                              fontWeight: FontWeight.w300,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                return _buildProductGrid(
+                  filteredProducts,
+                  isSmallScreen,
+                  screenWidth,
                 );
               },
             ),
@@ -462,12 +391,179 @@ class _ProductsPageState extends State<ProductsPage> {
     );
   }
 
-  Widget _buildSearchBar() {
+  Widget _buildMobileFilterToggle() {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: () {
+          setState(() {
+            _showFilters = !_showFilters;
+          });
+        },
+        icon: Icon(
+          _showFilters ? Icons.expand_less : Icons.expand_more,
+          color: Colors.black,
+        ),
+        label: Text(
+          _showFilters ? 'HIDE FILTERS' : 'SHOW FILTERS',
+          style: const TextStyle(
+            fontSize: 12,
+            letterSpacing: 1.0,
+            color: Colors.black,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.black,
+          side: const BorderSide(color: Colors.black12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileFiltersExpanded() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAFAFA),
+        border: Border.all(color: Colors.black12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          _buildGenderDropdown(),
+          const SizedBox(height: 12),
+          _buildTypeDropdown(),
+          const SizedBox(height: 12),
+          _buildSortDropdown(),
+          const SizedBox(height: 12),
+          _buildResetButton(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopFilters(bool isSmallScreen) {
+    return SizedBox(
+      height: isSmallScreen ? 70 : 78,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          SizedBox(width: 150, child: _buildGenderDropdown()),
+          const SizedBox(width: 12),
+          SizedBox(width: 150, child: _buildTypeDropdown()),
+          SizedBox(width: 170, child: _buildSortDropdown()),
+          const SizedBox(width: 12),
+          _buildResetButton(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProductGrid(
+    List<Map<String, dynamic>> filteredProducts,
+    bool isSmallScreen,
+    double screenWidth,
+  ) {
+    final crossAxisCount = isSmallScreen ? 1 : 2;
+    final childAspectRatio = isSmallScreen ? 0.7 : 0.52;
+    final horizontalPadding = isSmallScreen ? 12.0 : 16.0;
+    final crossAxisSpacing = isSmallScreen ? 12.0 : 16.0;
+    final mainAxisSpacing = isSmallScreen ? 20.0 : 28.0;
+
+    return GridView.builder(
+      padding: EdgeInsets.fromLTRB(
+        horizontalPadding,
+        isSmallScreen ? 8 : 8,
+        horizontalPadding,
+        24,
+      ),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        childAspectRatio: childAspectRatio,
+        crossAxisSpacing: crossAxisSpacing,
+        mainAxisSpacing: mainAxisSpacing,
+      ),
+      itemCount: filteredProducts.length,
+      itemBuilder: (context, index) {
+        final product = filteredProducts[index];
+        final priceStr = product['product_price']?.toString() ?? '0.00';
+        final imageUrl = ProductImageService.getPrimaryImageUrl(product);
+        final productName =
+            (product['product_name'] ?? 'Unknown').toString().toUpperCase();
+        final productType =
+            (product['product_type'] ?? '').toString().toUpperCase();
+
+        return GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ProductDetailsPage(product: product),
+              ),
+            );
+          },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Container(
+                  width: double.infinity,
+                  color: const Color(0xFFF5F5F5),
+                  child: _buildProductImage(imageUrl),
+                ),
+              ),
+              SizedBox(height: isSmallScreen ? 8 : 10),
+              if (productType.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    productType,
+                    style: TextStyle(
+                      color: Colors.black54,
+                      fontSize: isSmallScreen ? 9 : 10,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ),
+              Text(
+                productName,
+                style: TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.w400,
+                  fontSize: isSmallScreen ? 11 : 12,
+                  letterSpacing: 1.0,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              SizedBox(height: isSmallScreen ? 2 : 4),
+              Text(
+                'RM $priceStr',
+                style: TextStyle(
+                  color: Colors.black87,
+                  fontWeight: FontWeight.w300,
+                  fontSize: isSmallScreen ? 11 : 12,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSearchBar(bool isSmallScreen) {
     return TextField(
       controller: _searchController,
       cursorColor: Colors.black,
       decoration: InputDecoration(
-        hintText: 'Search product, gender, type, color, material...',
+        hintText: isSmallScreen
+            ? 'Search products...'
+            : 'Search product, gender, type, color, material...',
         hintStyle: const TextStyle(fontSize: 13, color: Colors.black45),
         prefixIcon: const Icon(Icons.search, color: Colors.black54, size: 20),
         suffixIcon: _searchController.text.isEmpty
@@ -610,6 +706,7 @@ class _ProductsPageState extends State<ProductsPage> {
             _selectedGender = (widget.gender ?? 'ALL').toUpperCase();
             _selectedType = 'ALL';
             _selectedSort = 'DEFAULT';
+            _showFilters = false;
           });
         },
         style: OutlinedButton.styleFrom(

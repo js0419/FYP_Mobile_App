@@ -1,60 +1,74 @@
 import 'package:flutter/material.dart';
-import '../../services/auth_service.dart';
-import 'login.dart';
+import '../../services/profile_service.dart';
 
-class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({super.key});
+class EditPasswordScreen extends StatefulWidget {
+  const EditPasswordScreen({super.key});
 
   @override
-  State<RegisterScreen> createState() => _RegisterScreenState();
+  State<EditPasswordScreen> createState() => _EditPasswordScreenState();
 }
 
-class _RegisterScreenState extends State<RegisterScreen> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+class _EditPasswordScreenState extends State<EditPasswordScreen> {
+  final _profileService = ProfileService();
+  final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final _authService = AuthService();
 
   bool _isLoading = false;
-  bool _obscurePassword = true;
+  bool _obscureNewPassword = true;
   bool _obscureConfirmPassword = true;
   String _errorMessage = '';
   String _successMessage = '';
 
   @override
   void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
+    _newPasswordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleRegister() async {
+  Future<void> _updatePassword() async {
+    if (_newPasswordController.text.isEmpty ||
+        _confirmPasswordController.text.isEmpty) {
+      setState(() {
+        _errorMessage = 'All fields are required';
+      });
+      return;
+    }
+
+    if (_newPasswordController.text != _confirmPasswordController.text) {
+      setState(() {
+        _errorMessage = 'Passwords do not match';
+      });
+      return;
+    }
+
+    if (_newPasswordController.text.length < 6) {
+      setState(() {
+        _errorMessage = 'Password must be at least 6 characters';
+      });
+      return;
+    }
+
     setState(() {
+      _isLoading = true;
       _errorMessage = '';
       _successMessage = '';
-      _isLoading = true;
     });
 
     try {
-      await _authService.register(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-        confirmPassword: _confirmPasswordController.text,
-      );
+      await _profileService.updatePassword(_newPasswordController.text);
 
       setState(() {
-        _successMessage =
-            'Registration successful! Please check your email to verify your account, then login.';
+        _successMessage = 'Password updated successfully!';
+        _newPasswordController.clear();
+        _confirmPasswordController.clear();
       });
 
+      // Pop after 2 seconds
       await Future.delayed(const Duration(seconds: 2));
-
-      if (!mounted) return;
-
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-      );
+      if (mounted) {
+        Navigator.pop(context);
+      }
     } catch (e) {
       setState(() {
         _errorMessage = e.toString().replaceAll('Exception: ', '');
@@ -70,54 +84,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth < 600;
+
     return Scaffold(
       backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black),
+        title: const Text(
+          'CHANGE PASSWORD',
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 14,
+            letterSpacing: 1.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
       body: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          padding: EdgeInsets.all(isSmallScreen ? 16.0 : 24.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 80),
-              // Logo/Title
-              const Align(
-                alignment: Alignment.center,
-                child: Column(
-                  children: [
-                    Icon(Icons.shopping_bag, size: 48, color: Colors.black),
-                    SizedBox(height: 16),
-                    Text(
-                      'K&P',
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 2.0,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 60),
-              // Title
-              const Text(
-                'CREATE ACCOUNT',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.5,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Join us and start shopping today',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.black54,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              const SizedBox(height: 40),
-
               // Error Message
               if (_errorMessage.isNotEmpty)
                 Container(
@@ -158,54 +149,36 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
 
-              // Email Field
               const Text(
-                'Email Address',
+                'PASSWORD REQUIREMENTS',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.5,
                 ),
               ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                cursorColor: Colors.black,
-                decoration: InputDecoration(
-                  hintText: 'Enter your email',
-                  hintStyle: const TextStyle(
-                    fontSize: 13,
-                    color: Colors.black45,
-                  ),
-                  filled: true,
-                  fillColor: const Color(0xFFF7F7F7),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Colors.black12),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                      color: Colors.black,
-                      width: 1.5,
-                    ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3E0),
+                  border: Border.all(color: Colors.amber[200]!),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  '• At least 6 characters long\n• Use a strong combination of letters, numbers, and symbols',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.black54,
+                    height: 1.6,
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 32),
 
-              // Password Field
+              // New Password
               const Text(
-                'Password',
+                'NEW PASSWORD',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -214,24 +187,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               const SizedBox(height: 8),
               TextField(
-                controller: _passwordController,
-                obscureText: _obscurePassword,
+                controller: _newPasswordController,
+                obscureText: _obscureNewPassword,
                 cursorColor: Colors.black,
                 decoration: InputDecoration(
-                  hintText: 'Enter your password',
-                  hintStyle: const TextStyle(
-                    fontSize: 13,
-                    color: Colors.black45,
-                  ),
+                  hintText: 'Enter new password',
+                  hintStyle:
+                      const TextStyle(fontSize: 13, color: Colors.black45),
                   filled: true,
                   fillColor: const Color(0xFFF7F7F7),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscurePassword
+                      _obscureNewPassword
                           ? Icons.visibility_off_outlined
                           : Icons.visibility_outlined,
                       color: Colors.black54,
@@ -239,7 +208,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     onPressed: () {
                       setState(() {
-                        _obscurePassword = !_obscurePassword;
+                        _obscureNewPassword = !_obscureNewPassword;
                       });
                     },
                   ),
@@ -253,26 +222,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                      color: Colors.black,
-                      width: 1.5,
-                    ),
+                    borderSide:
+                        const BorderSide(color: Colors.black, width: 1.5),
                   ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'At least 6 characters',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.black45,
                 ),
               ),
               const SizedBox(height: 20),
 
-              // Confirm Password Field
+              // Confirm Password
               const Text(
-                'Confirm Password',
+                'CONFIRM PASSWORD',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -285,17 +244,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 obscureText: _obscureConfirmPassword,
                 cursorColor: Colors.black,
                 decoration: InputDecoration(
-                  hintText: 'Confirm your password',
-                  hintStyle: const TextStyle(
-                    fontSize: 13,
-                    color: Colors.black45,
-                  ),
+                  hintText: 'Confirm new password',
+                  hintStyle:
+                      const TextStyle(fontSize: 13, color: Colors.black45),
                   filled: true,
                   fillColor: const Color(0xFFF7F7F7),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscureConfirmPassword
@@ -320,16 +275,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                      color: Colors.black,
-                      width: 1.5,
-                    ),
+                    borderSide:
+                        const BorderSide(color: Colors.black, width: 1.5),
                   ),
                 ),
               ),
               const SizedBox(height: 32),
 
-              // Register Button
+              // Update Button
               SizedBox(
                 width: double.infinity,
                 height: 56,
@@ -342,7 +295,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  onPressed: _isLoading ? null : _handleRegister,
+                  onPressed: _isLoading ? null : _updatePassword,
                   child: _isLoading
                       ? const SizedBox(
                           width: 24,
@@ -353,7 +306,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                         )
                       : const Text(
-                          'CREATE ACCOUNT',
+                          'UPDATE PASSWORD',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -362,40 +315,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                 ),
               ),
-              const SizedBox(height: 20),
-
-              // Login Link
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    'Already have an account? ',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.black54,
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(
-                          builder: (context) => const LoginScreen(),
-                        ),
-                      );
-                    },
-                    child: const Text(
-                      'Login here',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.black,
-                        fontWeight: FontWeight.w600,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 40),
             ],
           ),
         ),

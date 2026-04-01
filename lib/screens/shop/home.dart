@@ -42,6 +42,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: const CustomAppBar(),
@@ -57,21 +59,21 @@ class _HomeScreenState extends State<HomeScreen> {
                   MaterialPageRoute(builder: (context) => const ProductsPage()),
                 );
               },
-              child: _buildFashionBanner(),
+              child: _buildFashionBanner(screenWidth),
             ),
-            const SizedBox(height: 50),
-            const Text(
+            SizedBox(height: screenWidth > 600 ? 50 : 30),
+            Text(
               'TRENDING NOW',
               style: TextStyle(
-                fontSize: 16,
+                fontSize: screenWidth > 600 ? 16 : 14,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 3.0,
                 color: Colors.black,
               ),
             ),
-            const SizedBox(height: 24),
-            _buildHotSalesGrid(),
-            const SizedBox(height: 60),
+            SizedBox(height: screenWidth > 600 ? 24 : 16),
+            _buildHotSalesGrid(screenWidth),
+            SizedBox(height: screenWidth > 600 ? 60 : 40),
             const CustomFooter(),
           ],
         ),
@@ -162,10 +164,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildFashionBanner() {
+  Widget _buildFashionBanner(double screenWidth) {
+    // Responsive banner height
+    final bannerHeight = screenWidth > 600 ? 500.0 : 300.0;
+
     return Container(
       width: double.infinity,
-      height: 500,
+      height: bannerHeight,
       decoration: const BoxDecoration(
         image: DecorationImage(
           image: NetworkImage(
@@ -178,12 +183,12 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Container(
         color: Colors.black.withValues(alpha: 0.15),
         alignment: Alignment.center,
-        child: const Text(
+        child: Text(
           'NEW COLLECTION',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: Colors.white,
-            fontSize: 28,
+            fontSize: screenWidth > 600 ? 28 : 20,
             fontWeight: FontWeight.w500,
             letterSpacing: 5.0,
           ),
@@ -192,7 +197,14 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildHotSalesGrid() {
+  Widget _buildHotSalesGrid(double screenWidth) {
+    // Responsive crossAxisCount
+    final crossAxisCount = screenWidth > 600 ? 2 : 1;
+    final childAspectRatio = screenWidth > 600 ? 0.55 : 0.65;
+    final horizontalPadding = screenWidth > 600 ? 16.0 : 12.0;
+    final crossAxisSpacing = screenWidth > 600 ? 16.0 : 12.0;
+    final mainAxisSpacing = screenWidth > 600 ? 32.0 : 24.0;
+
     return FutureBuilder<List<Map<String, dynamic>>>(
       future: _hotSalesFuture,
       builder: (context, snapshot) {
@@ -231,15 +243,15 @@ class _HomeScreenState extends State<HomeScreen> {
         }
 
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
           child: GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.55,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 32,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              childAspectRatio: childAspectRatio,
+              crossAxisSpacing: crossAxisSpacing,
+              mainAxisSpacing: mainAxisSpacing,
             ),
             itemCount: products.length,
             itemBuilder: (context, index) {
@@ -270,25 +282,25 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: _buildProductImage(imageUrl),
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: screenWidth > 600 ? 12 : 8),
                     Text(
                       productName,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Colors.black,
                         fontWeight: FontWeight.w400,
-                        fontSize: 12,
+                        fontSize: screenWidth > 600 ? 12 : 11,
                         letterSpacing: 1.0,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
+                    SizedBox(height: screenWidth > 600 ? 4 : 2),
                     Text(
                       'RM $priceStr',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Colors.black87,
                         fontWeight: FontWeight.w300,
-                        fontSize: 12,
+                        fontSize: screenWidth > 600 ? 12 : 11,
                       ),
                     ),
                   ],
