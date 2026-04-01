@@ -59,7 +59,7 @@ class CustomFooter extends StatelessWidget {
             children: const [
               Icon(Icons.email_outlined, size: 20),
               SizedBox(width: 8),
-              Text('support@fashionai.com'),
+              Text('support@gmail.com'),
             ],
           ),
           const SizedBox(height: 8),

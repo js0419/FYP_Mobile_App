@@ -1021,14 +1021,14 @@ select
   p.product_pic4
 from (
   values
-  ('Top','Korean Oversize Shirt','Loose Korean style shirt for daily wear.','unisex','shirt','oversized','White','Cotton',69.90,'oversize_shirt_K1.PNG','oversize_shirt_K2.PNG','oversize_shirt_K3.PNG','oversize_shirt_K4.PNG'),
+  ('Top','Korean Oversize Shirt','Loose Korean style shirt for daily wear.','unisex','shirt','oversized','White','Cotton',69.90,'oversize_shirt_K1.png','oversize_shirt_K2.png','oversize_shirt_K3.png','oversize_shirt_K4.png'),
   ('Top','White Office Shirt','Clean office shirt for formal look.','unisex','shirt','regular','White','Cotton',65.90,'white_office_shirt_1.png','white_office_shirt_2.png','white_office_shirt_3.png','white_office_shirt_4.png'),
-  ('Top','Blue Stripe Shirt','Blue stripe shirt for smart casual style.','men','shirt','regular','Blue','Cotton',67.90,'blue_stripe_shirt_1.png','blue_stripe_shirt_2.png','blue_stripe_shirt_3.png','blue_stripe_shirt_4.png'),
-  ('Top','Satin Formal Shirt','Soft satin formal shirt for elegant look.','women','shirt','slim','Cream','Satin',72.90,'satin_formal_shirt_1.png','satin_formal_shirt_2.png','satin_formal_shirt_3.png','satin_formal_shirt_4.png'),
+  ('Top','Blue Stripe Shirt','Blue stripe shirt for smart casual style.','men','shirt','regular','Blue','Cotton',67.90,'blue_stripe_shirt_1.png','blue_stripe_shirt_2.png','blue_stripe_shirt_3.png',''),
+  ('Top','Satin Formal Shirt','Soft satin formal shirt for elegant look.','women','shirt','slim','Cream','Satin',72.90,'satin_formal_shirt_1.png','satin_formal_shirt_2.png','satin_formal_shirt_3.png',''),
 
   ('Top','Korean Crop Tee','Simple crop tee with 4 image set.','women','tshirt','slim','Black','Cotton',42.90,'crop_tee_K1.png','crop_tee_K2.png','crop_tee_K3.png','crop_tee_K4.png'),
   ('Top','Ghost Graphic Tee','Black graphic tee with cute ghost print.','unisex','tshirt','regular','Black','Cotton',45.90,'ghost_graphic_tee_1.png','ghost_graphic_tee_2.png','ghost_graphic_tee_3.png','ghost_graphic_tee_4.png'),
-  ('Top','Basic Black Drawstring Tee','Black drawstring tee for casual outfit.','women','tshirt','slim','Black','Cotton',41.90,'drawstring_tee_1.png','drawstring_tee_2.png','drawstring_tee_3.png','drawstring_tee_4.png'),
+  ('Top','Basic Black Drawstring Tee','Black drawstring tee for casual outfit.','women','tshirt','slim','Black','Cotton',41.90,'drawstring_tee_1.png','drawstring_tee_2.png','drawstring_tee_3.png',''),
   ('Top','Sky Blue Off Shoulder Tee','Soft blue off shoulder tee for cute look.','women','tshirt','relaxed','Blue','Cotton',46.90,'off_shoulder_tee_1.png','off_shoulder_tee_2.png','off_shoulder_tee_3.png','off_shoulder_tee_4.png'),
 
   ('Top','Ribbon Blouse','Ribbon blouse with feminine style.','women','blouse','regular','Pink','Chiffon',59.90,'ribbon_blouse_1.png','ribbon_blouse_2.png','ribbon_blouse_3.png','ribbon_blouse_4.png'),

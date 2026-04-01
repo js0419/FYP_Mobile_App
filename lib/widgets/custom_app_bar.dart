@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../screens/shop/home.dart'; // Import your Home Screen
+import '../screens/shop/home.dart';
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   const CustomAppBar({Key? key}) : super(key: key);
@@ -29,7 +29,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
             Icon(Icons.shopping_bag, color: Colors.black), 
             SizedBox(width: 8),
             Text(
-              'FashionAI', 
+              'K&P', 
               style: TextStyle(
                 color: Colors.black, 
                 fontWeight: FontWeight.bold,
@@ -42,12 +42,6 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
       
       // Right top corner icons
       actions: [
-        IconButton(
-          icon: const Icon(Icons.favorite_border),
-          onPressed: () {
-            // TODO: Navigate to Wishlist
-          },
-        ),
         IconButton(
           icon: const Icon(Icons.shopping_cart_outlined),
           onPressed: () {

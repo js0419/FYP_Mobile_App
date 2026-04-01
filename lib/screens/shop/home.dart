@@ -23,38 +23,35 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _fetchHotSales() {
-  _hotSalesFuture = () async {
-    try {
-      final data = await Supabase.instance.client
-          .from('products')
-          .select('*')
-          .eq('product_status', 'active')
-          .limit(4);
+    _hotSalesFuture = () async {
+      try {
+        final data = await Supabase.instance.client
+            .from('products')
+            .select('*')
+            .eq('product_status', 'active')
+            .limit(4);
 
-      debugPrint('Hot sales fetched: ${data.length}');
-      return List<Map<String, dynamic>>.from(data);
-    } catch (e, st) {
-      debugPrint('Hot sales fetch error: $e');
-      debugPrintStack(stackTrace: st);
-      rethrow;
-    }
-  }();
-}
+        return List<Map<String, dynamic>>.from(data);
+      } catch (e, st) {
+        debugPrint('Hot sales fetch error: $e');
+        debugPrintStack(stackTrace: st);
+        rethrow;
+      }
+    }();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: const CustomAppBar(),
-      drawer: _buildDrawer(context), // Pass context here
+      drawer: _buildDrawer(context),
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // 1. Fashion Hero Banner (Now Clickable)
             GestureDetector(
               onTap: () {
-                // Clicking banner goes to ALL products
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const ProductsPage()),
@@ -62,9 +59,7 @@ class _HomeScreenState extends State<HomeScreen> {
               },
               child: _buildFashionBanner(),
             ),
-
             const SizedBox(height: 50),
-
             const Text(
               'TRENDING NOW',
               style: TextStyle(
@@ -75,11 +70,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 24),
-
             _buildHotSalesGrid(),
-
             const SizedBox(height: 60),
-
             const CustomFooter(),
           ],
         ),
@@ -87,7 +79,28 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- UI Builder Methods ---
+  Future<void> _openNamedRoute(
+    BuildContext context,
+    String routeName,
+    String pageName,
+  ) async {
+    Navigator.pop(context);
+
+    try {
+      await Navigator.pushNamed(context, routeName);
+    } catch (_) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$pageName route not found. Change the route name if your app uses a different one.',
+          ),
+          backgroundColor: Colors.black,
+        ),
+      );
+    }
+  }
 
   Widget _buildDrawer(BuildContext context) {
     return Drawer(
@@ -97,34 +110,52 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           const DrawerHeader(
             decoration: BoxDecoration(color: Colors.black),
-            child: Text(
-              'COLLECTIONS',
-              style: TextStyle(
-                color: Colors.white, 
-                fontSize: 20, 
-                letterSpacing: 2.0,
+            child: Align(
+              alignment: Alignment.bottomLeft,
+              child: Text(
+                'MENU',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 2.0,
+                ),
               ),
             ),
           ),
           ListTile(
-            title: const Text('WOMEN', style: TextStyle(letterSpacing: 1.5, fontSize: 14)),
+            leading: const Icon(Icons.storefront_outlined, color: Colors.black),
+            title: const Text('PRODUCT PAGE'),
             onTap: () {
-              Navigator.pop(context); // Close the drawer first
+              Navigator.pop(context);
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const ProductsPage(gender: 'women')),
+                MaterialPageRoute(builder: (context) => const ProductsPage()),
               );
             },
           ),
           ListTile(
-            title: const Text('MEN', style: TextStyle(letterSpacing: 1.5, fontSize: 14)),
-            onTap: () {
-              Navigator.pop(context); // Close the drawer first
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const ProductsPage(gender: 'men')),
-              );
-            },
+            leading: const Icon(Icons.info_outline, color: Colors.black),
+            title: const Text('ABOUT US PAGE'),
+            onTap: () => _openNamedRoute(context, '/about', 'About Us'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.help_outline, color: Colors.black),
+            title: const Text('FAQ PAGE'),
+            onTap: () => _openNamedRoute(context, '/faq', 'FAQ'),
+          ),
+          ListTile(
+            leading: const Icon(
+              Icons.shopping_bag_outlined,
+              color: Colors.black,
+            ),
+            title: const Text('CART PAGE'),
+            onTap: () => _openNamedRoute(context, '/cart', 'Cart'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.person_outline, color: Colors.black),
+            title: const Text('PROFILE PAGE'),
+            onTap: () => _openNamedRoute(context, '/profile', 'Profile'),
           ),
         ],
       ),
@@ -138,13 +169,14 @@ class _HomeScreenState extends State<HomeScreen> {
       decoration: const BoxDecoration(
         image: DecorationImage(
           image: NetworkImage(
-              'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80'),
+            'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
+          ),
           fit: BoxFit.cover,
           alignment: Alignment.topCenter,
         ),
       ),
       child: Container(
-        color: Colors.black.withOpacity(0.15),
+        color: Colors.black.withValues(alpha: 0.15),
         alignment: Alignment.center,
         child: const Text(
           'NEW COLLECTION',
@@ -168,13 +200,21 @@ class _HomeScreenState extends State<HomeScreen> {
           return const Center(
             child: Padding(
               padding: EdgeInsets.all(32.0),
-              child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2),
+              child: CircularProgressIndicator(
+                color: Colors.black,
+                strokeWidth: 2,
+              ),
             ),
           );
         }
 
         if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.black)));
+          return Center(
+            child: Text(
+              'Error: ${snapshot.error}',
+              style: const TextStyle(color: Colors.black),
+            ),
+          );
         }
 
         final products = snapshot.data;
@@ -205,16 +245,18 @@ class _HomeScreenState extends State<HomeScreen> {
             itemBuilder: (context, index) {
               final product = products[index];
               final priceStr = product['product_price']?.toString() ?? '0.00';
-              final imageUrl = ProductImageService.getPublicUrl(product['product_pic1']);
-              final productName = (product['product_name'] ?? 'Unknown').toString().toUpperCase();
+              final imageUrl = ProductImageService.getPrimaryImageUrl(product);
+              final productName = (product['product_name'] ?? 'Unknown')
+                  .toString()
+                  .toUpperCase();
 
               return GestureDetector(
                 onTap: () {
-                  // Make Hot Sales items clickable too!
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => ProductDetailsPage(product: product),
+                      builder: (context) =>
+                          ProductDetailsPage(product: product),
                     ),
                   );
                 },
@@ -225,13 +267,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Container(
                         width: double.infinity,
                         color: const Color(0xFFF5F5F5),
-                        child: imageUrl != null && imageUrl.toString().isNotEmpty
-                            ? Image.network(
-                                imageUrl,
-                                fit: BoxFit.cover,
-                                errorBuilder: (c, e, s) => const Icon(Icons.broken_image, color: Colors.grey, size: 40),
-                              )
-                            : const Icon(Icons.image_not_supported, color: Colors.grey, size: 40),
+                        child: _buildProductImage(imageUrl),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -261,6 +297,30 @@ class _HomeScreenState extends State<HomeScreen> {
             },
           ),
         );
+      },
+    );
+  }
+
+  Widget _buildProductImage(String imageUrl) {
+    if (imageUrl.isEmpty) {
+      return const Icon(
+        Icons.image_not_supported,
+        color: Colors.grey,
+        size: 40,
+      );
+    }
+
+    return Image.network(
+      imageUrl,
+      fit: BoxFit.cover,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return const Center(
+          child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2),
+        );
+      },
+      errorBuilder: (context, error, stackTrace) {
+        return const Icon(Icons.broken_image, color: Colors.grey, size: 40);
       },
     );
   }
