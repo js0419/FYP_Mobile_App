@@ -305,7 +305,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
   @override
   void initState() {
     super.initState();
-    _orderDetailsFuture = _profileService.getOrderDetails(widget.orderId);
+    _orderDetailsFuture = _profileService.getOrderDetails(widget.orderId.toString());
   }
 
   @override

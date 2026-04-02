@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../screens/shop/home.dart';
-import '../screens/auth/login.dart';
 import '../services/auth_service.dart';
+import '../screens/profile/profile.dart';
+import '../screens/auth/login.dart';
 
 class CustomAppBar extends StatefulWidget implements PreferredSizeWidget {
   const CustomAppBar({Key? key}) : super(key: key);
@@ -18,17 +19,16 @@ class _CustomAppBarState extends State<CustomAppBar> {
 
   @override
   Widget build(BuildContext context) {
-    final currentUser = _authService.getCurrentUser();
+    final user = _authService.getCurrentUser();
+    final isLoggedIn = user != null;
 
     return AppBar(
       elevation: 0,
       backgroundColor: Colors.white,
       iconTheme: const IconThemeData(color: Colors.black),
       
-      // Make the Title/Logo clickable
       title: GestureDetector(
         onTap: () {
-          // Navigate to Home Page and clear previous page history
           Navigator.pushAndRemoveUntil(
             context,
             MaterialPageRoute(builder: (context) => const HomeScreen()),
@@ -51,99 +51,112 @@ class _CustomAppBarState extends State<CustomAppBar> {
         ),
       ),
       
-      // Right top corner icons
       actions: [
+        // Shopping Cart
         IconButton(
           icon: const Icon(Icons.shopping_cart_outlined),
           onPressed: () {
-            // TODO: Navigate to Cart
+            if (!isLoggedIn) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Please login to view cart'),
+                  backgroundColor: Colors.black,
+                ),
+              );
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const LoginScreen()),
+              );
+            }
           },
         ),
-        // Profile Picture or Login Button
-        if (currentUser == null)
-          // Not logged in - Show LOGIN button
+
+        // Profile Menu - Only show when logged in
+        if (isLoggedIn)
+          PopupMenuButton<String>(
+            offset: const Offset(0, 45),
+            icon: CircleAvatar(
+              radius: 16,
+              backgroundColor: Colors.black,
+              child: Text(
+                '${user.email?[0].toUpperCase() ?? 'U'}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            onSelected: (String value) {
+              if (value == 'profile') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ProfileScreen(),
+                  ),
+                );
+              } else if (value == 'logout') {
+                _handleLogout();
+              }
+            },
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              PopupMenuItem<String>(
+                value: 'profile',
+                child: Row(
+                  children: const [
+                    Icon(Icons.person_outline, size: 18, color: Colors.black),
+                    SizedBox(width: 12),
+                    Text('My Profile'),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
+              PopupMenuItem<String>(
+                value: 'logout',
+                child: Row(
+                  children: const [
+                    Icon(Icons.logout, size: 18, color: Colors.red),
+                    SizedBox(width: 12),
+                    Text('Logout', style: TextStyle(color: Colors.red)),
+                  ],
+                ),
+              ),
+            ],
+          )
+        else
+          // LOGIN Button - Only show when not logged in
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
             child: Center(
-              child: GestureDetector(
-                onTap: () {
-                  Navigator.of(context).push(
+              child: TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
                     MaterialPageRoute(
                       builder: (context) => const LoginScreen(),
                     ),
                   );
                 },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.black),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    'LOGIN',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.black,
                 ),
-              ),
-            ),
-          )
-        else
-          // Logged in - Show Profile Picture with Dropdown
-          PopupMenuButton<String>(
-            offset: const Offset(0, 45),
-            icon: const CircleAvatar(
-              radius: 16,
-              backgroundImage: NetworkImage(
-                'https://ui-avatars.com/api/?name=User&background=random',
-              ),
-            ),
-            onSelected: (String value) async {
-              switch (value) {
-                case 'profile':
-                  // TODO: Navigate to Profile
-                  break;
-                case 'logout':
-                  _handleLogout();
-                  break;
-              }
-            },
-            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-              PopupMenuItem<String>(
-                enabled: false,
-                child: Text(
-                  currentUser.email ?? 'User',
-                  style: const TextStyle(
+                child: const Text(
+                  'LOGIN',
+                  style: TextStyle(
                     fontSize: 12,
-                    color: Colors.black54,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
                   ),
                 ),
               ),
-              const PopupMenuDivider(),
-              const PopupMenuItem<String>(
-                value: 'profile',
-                child: Text('Profile'),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem<String>(
-                value: 'logout',
-                child: Text('Logout'),
-              ),
-            ],
+            ),
           ),
+
         const SizedBox(width: 8),
       ],
     );
   }
 
-  void _handleLogout() async {
+  void _handleLogout() {
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -162,6 +175,12 @@ class _CustomAppBarState extends State<CustomAppBar> {
                   await _authService.logout();
                   if (mounted) {
                     setState(() {});
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Logged out successfully'),
+                        backgroundColor: Colors.black,
+                      ),
+                    );
                   }
                 } catch (e) {
                   if (mounted) {

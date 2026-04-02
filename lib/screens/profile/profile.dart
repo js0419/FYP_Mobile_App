@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../services/profile_service.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../auth/login.dart';
 import 'edit_profile.dart';
 import 'edit_password.dart';
 import 'address.dart';
-import 'order_history.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -124,10 +122,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     onPressed: () {
-                      Navigator.of(context).push(
+                      Navigator.of(context).pushAndRemoveUntil(
                         MaterialPageRoute(
                           builder: (context) => const LoginScreen(),
                         ),
+                        (route) => false,
                       );
                     },
                     child: const Text(
@@ -331,20 +330,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         context,
                         MaterialPageRoute(
                           builder: (context) => const AddressScreen(),
-                        ),
-                      );
-                    },
-                  ),
-
-                  // Order History
-                  _buildMenuTile(
-                    icon: Icons.shopping_bag_outlined,
-                    title: 'Order History',
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const OrderHistoryScreen(),
                         ),
                       );
                     },

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/profile_service.dart';
+import '../../services/validation_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AddressScreen extends StatefulWidget {
@@ -42,7 +43,7 @@ class _AddressScreenState extends State<AddressScreen> {
     );
   }
 
-  void _deleteAddress(int addressId) {
+  void _deleteAddress(String addressId) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -217,7 +218,7 @@ class _AddressScreenState extends State<AddressScreen> {
                         children: [
                           Expanded(
                             child: Text(
-                              address['full_name'] ?? 'Unknown',
+                              address['recipient_name'] ?? 'Unknown',
                               style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
@@ -249,7 +250,7 @@ class _AddressScreenState extends State<AddressScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        address['phone_number'] ?? '',
+                        address['phone'] ?? '',
                         style: const TextStyle(
                           fontSize: 12,
                           color: Colors.black54,
@@ -257,7 +258,7 @@ class _AddressScreenState extends State<AddressScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '${address['street']}, ${address['postal_code']} ${address['city']}, ${address['state']}',
+                        '${address['address_line1']}, ${address['post_code']} ${address['city']}, ${address['state']}',
                         style: const TextStyle(
                           fontSize: 12,
                           color: Colors.black54,
@@ -332,16 +333,16 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
   void initState() {
     super.initState();
     _fullNameController =
-        TextEditingController(text: widget.address?['full_name'] ?? '');
+        TextEditingController(text: widget.address?['recipient_name'] ?? '');
     _phoneController =
-        TextEditingController(text: widget.address?['phone_number'] ?? '');
+        TextEditingController(text: widget.address?['phone'] ?? '');
     _streetController =
-        TextEditingController(text: widget.address?['street'] ?? '');
+        TextEditingController(text: widget.address?['address_line1'] ?? '');
     _cityController = TextEditingController(text: widget.address?['city'] ?? '');
     _stateController =
         TextEditingController(text: widget.address?['state'] ?? '');
     _postalCodeController =
-        TextEditingController(text: widget.address?['postal_code'] ?? '');
+        TextEditingController(text: widget.address?['post_code'] ?? '');
     _countryController =
         TextEditingController(text: widget.address?['country'] ?? 'Malaysia');
     _isDefault = widget.address?['is_default'] ?? false;
@@ -360,14 +361,57 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
   }
 
   Future<void> _saveAddress() async {
-    if (_fullNameController.text.isEmpty ||
-        _phoneController.text.isEmpty ||
-        _streetController.text.isEmpty ||
-        _cityController.text.isEmpty ||
-        _stateController.text.isEmpty ||
-        _postalCodeController.text.isEmpty) {
+    // Validate all fields
+    final nameError =
+        ValidationService.validateName(_fullNameController.text, 'Full name');
+    if (nameError != null) {
       setState(() {
-        _errorMessage = 'All fields are required';
+        _errorMessage = nameError;
+      });
+      return;
+    }
+
+    final phoneError =
+        ValidationService.validatePhone(_phoneController.text);
+    if (phoneError != null) {
+      setState(() {
+        _errorMessage = phoneError;
+      });
+      return;
+    }
+
+    final streetError =
+        ValidationService.validateStreet(_streetController.text);
+    if (streetError != null) {
+      setState(() {
+        _errorMessage = streetError;
+      });
+      return;
+    }
+
+    final cityError =
+        ValidationService.validateCity(_cityController.text, 'City');
+    if (cityError != null) {
+      setState(() {
+        _errorMessage = cityError;
+      });
+      return;
+    }
+
+    final stateError =
+        ValidationService.validateCity(_stateController.text, 'State');
+    if (stateError != null) {
+      setState(() {
+        _errorMessage = stateError;
+      });
+      return;
+    }
+
+    final postalError =
+        ValidationService.validatePostalCode(_postalCodeController.text);
+    if (postalError != null) {
+      setState(() {
+        _errorMessage = postalError;
       });
       return;
     }
@@ -382,7 +426,6 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
       if (user == null) throw Exception('User not found');
 
       if (widget.address != null) {
-        // Update existing address
         await _profileService.updateAddress(
           addressId: widget.address!['address_id'],
           userId: user.id,
@@ -396,7 +439,6 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
           isDefault: _isDefault,
         );
       } else {
-        // Add new address
         await _profileService.addAddress(
           userId: user.id,
           fullName: _fullNameController.text.trim(),
@@ -462,7 +504,6 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Error Message
               if (_errorMessage.isNotEmpty)
                 Container(
                   width: double.infinity,
@@ -482,64 +523,63 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
                   ),
                 ),
 
-              // Full Name
               _buildFormField(
                 label: 'FULL NAME',
                 controller: _fullNameController,
-                hintText: 'Enter full name',
+                hintText: 'e.g., John Doe',
+                helperText: 'Letters only (2-50 characters)',
               ),
               const SizedBox(height: 20),
 
-              // Phone Number
               _buildFormField(
                 label: 'PHONE NUMBER',
                 controller: _phoneController,
-                hintText: 'Enter phone number',
+                hintText: '0123456789',
+                helperText: 'Malaysian format (10-11 digits)',
                 keyboardType: TextInputType.phone,
               ),
               const SizedBox(height: 20),
 
-              // Street
               _buildFormField(
                 label: 'STREET ADDRESS',
                 controller: _streetController,
-                hintText: 'Enter street address',
+                hintText: 'e.g., 123 Jalan Merdeka',
+                helperText: 'Min 5, Max 100 characters',
               ),
               const SizedBox(height: 20),
 
-              // Postal Code
               _buildFormField(
                 label: 'POSTAL CODE',
                 controller: _postalCodeController,
-                hintText: 'Enter postal code',
+                hintText: '50000',
+                helperText: 'Malaysian format (5 digits)',
+                keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 20),
 
-              // City
               _buildFormField(
                 label: 'CITY',
                 controller: _cityController,
-                hintText: 'Enter city',
+                hintText: 'e.g., Kuala Lumpur',
+                helperText: 'City name (2-50 characters)',
               ),
               const SizedBox(height: 20),
 
-              // State
               _buildFormField(
                 label: 'STATE',
                 controller: _stateController,
-                hintText: 'Enter state',
+                hintText: 'e.g., Selangor',
+                helperText: 'State name (2-50 characters)',
               ),
               const SizedBox(height: 20),
 
-              // Country
               _buildFormField(
                 label: 'COUNTRY',
                 controller: _countryController,
-                hintText: 'Enter country',
+                hintText: 'e.g., Malaysia',
               ),
               const SizedBox(height: 20),
 
-              // Set as Default
               CheckboxListTile(
                 value: _isDefault,
                 onChanged: (value) {
@@ -562,7 +602,6 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
               ),
               const SizedBox(height: 32),
 
-              // Save Button
               SizedBox(
                 width: double.infinity,
                 height: 56,
@@ -606,6 +645,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
     required String label,
     required TextEditingController controller,
     required String hintText,
+    String? helperText,
     TextInputType keyboardType = TextInputType.text,
   }) {
     return Column(
@@ -641,10 +681,21 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Colors.black, width: 1.5),
+              borderSide:
+                  const BorderSide(color: Colors.black, width: 1.5),
             ),
           ),
         ),
+        if (helperText != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            helperText,
+            style: const TextStyle(
+              fontSize: 10,
+              color: Colors.black54,
+            ),
+          ),
+        ]
       ],
     );
   }

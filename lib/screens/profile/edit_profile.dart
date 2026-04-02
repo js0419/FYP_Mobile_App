@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/profile_service.dart';
+import '../../services/validation_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -25,12 +26,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _firstNameController =
-        TextEditingController(text: widget.userProfile['first_name'] ?? '');
-    _lastNameController =
-        TextEditingController(text: widget.userProfile['last_name'] ?? '');
+    final nameParts = (widget.userProfile['user_name'] ?? '').toString().split(' ');
+    _firstNameController = TextEditingController(
+      text: nameParts.isNotEmpty ? nameParts[0] : '',
+    );
+    _lastNameController = TextEditingController(
+      text: nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '',
+    );
     _phoneController =
-        TextEditingController(text: widget.userProfile['phone_number'] ?? '');
+        TextEditingController(text: widget.userProfile['user_phone'] ?? '');
     _emailController = TextEditingController(
         text: Supabase.instance.client.auth.currentUser?.email ?? '');
   }
@@ -45,11 +49,30 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _updateProfile() async {
-    if (_firstNameController.text.isEmpty ||
-        _lastNameController.text.isEmpty ||
-        _phoneController.text.isEmpty) {
+    // Validate all fields
+    final firstNameError =
+        ValidationService.validateName(_firstNameController.text, 'First name');
+    if (firstNameError != null) {
       setState(() {
-        _errorMessage = 'All fields are required';
+        _errorMessage = firstNameError;
+      });
+      return;
+    }
+
+    final lastNameError =
+        ValidationService.validateName(_lastNameController.text, 'Last name');
+    if (lastNameError != null) {
+      setState(() {
+        _errorMessage = lastNameError;
+      });
+      return;
+    }
+
+    final phoneError =
+        ValidationService.validatePhone(_phoneController.text);
+    if (phoneError != null) {
+      setState(() {
+        _errorMessage = phoneError;
       });
       return;
     }
@@ -77,7 +100,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         _successMessage = 'Profile updated successfully!';
       });
 
-      // Pop after 2 seconds
       await Future.delayed(const Duration(seconds: 2));
       if (mounted) {
         Navigator.pop(context, true);
@@ -122,7 +144,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Error Message
               if (_errorMessage.isNotEmpty)
                 Container(
                   width: double.infinity,
@@ -142,7 +163,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   ),
                 ),
 
-              // Success Message
               if (_successMessage.isNotEmpty)
                 Container(
                   width: double.infinity,
@@ -162,160 +182,40 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   ),
                 ),
 
-              // First Name
-              const Text(
-                'FIRST NAME',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
+              _buildFormField(
+                label: 'FIRST NAME',
                 controller: _firstNameController,
-                cursorColor: Colors.black,
-                decoration: InputDecoration(
-                  hintText: 'Enter first name',
-                  hintStyle:
-                      const TextStyle(fontSize: 13, color: Colors.black45),
-                  filled: true,
-                  fillColor: const Color(0xFFF7F7F7),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Colors.black12),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide:
-                        const BorderSide(color: Colors.black, width: 1.5),
-                  ),
-                ),
+                hintText: 'e.g., John',
+                helperText: 'Letters only (2-50 characters)',
               ),
               const SizedBox(height: 20),
 
-              // Last Name
-              const Text(
-                'LAST NAME',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
+              _buildFormField(
+                label: 'LAST NAME',
                 controller: _lastNameController,
-                cursorColor: Colors.black,
-                decoration: InputDecoration(
-                  hintText: 'Enter last name',
-                  hintStyle:
-                      const TextStyle(fontSize: 13, color: Colors.black45),
-                  filled: true,
-                  fillColor: const Color(0xFFF7F7F7),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Colors.black12),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide:
-                        const BorderSide(color: Colors.black, width: 1.5),
-                  ),
-                ),
+                hintText: 'e.g., Doe',
+                helperText: 'Letters only (2-50 characters)',
               ),
               const SizedBox(height: 20),
 
-              // Phone Number
-              const Text(
-                'PHONE NUMBER',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
+              _buildFormField(
+                label: 'PHONE NUMBER',
                 controller: _phoneController,
+                hintText: '0123456789',
+                helperText: 'Malaysian format (10-11 digits)',
                 keyboardType: TextInputType.phone,
-                cursorColor: Colors.black,
-                decoration: InputDecoration(
-                  hintText: 'Enter phone number',
-                  hintStyle:
-                      const TextStyle(fontSize: 13, color: Colors.black45),
-                  filled: true,
-                  fillColor: const Color(0xFFF7F7F7),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Colors.black12),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide:
-                        const BorderSide(color: Colors.black, width: 1.5),
-                  ),
-                ),
               ),
               const SizedBox(height: 20),
 
-              // Email (Read-only)
-              const Text(
-                'EMAIL',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
+              _buildFormField(
+                label: 'EMAIL',
                 controller: _emailController,
+                hintText: 'email@example.com',
                 enabled: false,
-                cursorColor: Colors.black,
-                decoration: InputDecoration(
-                  hintText: 'Email',
-                  hintStyle:
-                      const TextStyle(fontSize: 13, color: Colors.black45),
-                  filled: true,
-                  fillColor: const Color(0xFFF0F0F0),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Email cannot be changed',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.black45,
-                ),
+                helperText: 'Email cannot be changed',
               ),
               const SizedBox(height: 32),
 
-              // Save Button
               SizedBox(
                 width: double.infinity,
                 height: 56,
@@ -352,6 +252,67 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildFormField({
+    required String label,
+    required TextEditingController controller,
+    required String hintText,
+    String? helperText,
+    TextInputType keyboardType = TextInputType.text,
+    bool enabled = true,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          enabled: enabled,
+          cursorColor: Colors.black,
+          decoration: InputDecoration(
+            hintText: hintText,
+            hintStyle: const TextStyle(fontSize: 13, color: Colors.black45),
+            filled: true,
+            fillColor: enabled ? const Color(0xFFF7F7F7) : const Color(0xFFF0F0F0),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Colors.black12),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide:
+                  const BorderSide(color: Colors.black, width: 1.5),
+            ),
+          ),
+        ),
+        if (helperText != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            helperText,
+            style: const TextStyle(
+              fontSize: 10,
+              color: Colors.black54,
+            ),
+          ),
+        ]
+      ],
     );
   }
 }

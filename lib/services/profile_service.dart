@@ -18,7 +18,7 @@ class ProfileService {
     }
   }
 
-  // Update user profile
+  // Update user profile - Fixed column names to match database
   Future<void> updateUserProfile({
     required String userId,
     required String firstName,
@@ -27,9 +27,8 @@ class ProfileService {
   }) async {
     try {
       await _supabase.from('users').update({
-        'first_name': firstName,
-        'last_name': lastName,
-        'phone_number': phoneNumber,
+        'user_name': '$firstName $lastName',
+        'user_phone': phoneNumber,
         'updated_at': DateTime.now().toIso8601String(),
       }).eq('user_id', userId);
     } catch (e) {
@@ -78,7 +77,6 @@ class ProfileService {
     required bool isDefault,
   }) async {
     try {
-      // If setting as default, unset other defaults
       if (isDefault) {
         await _supabase
             .from('addresses')
@@ -88,12 +86,12 @@ class ProfileService {
 
       await _supabase.from('addresses').insert({
         'user_id': userId,
-        'full_name': fullName,
-        'phone_number': phoneNumber,
-        'street': street,
+        'recipient_name': fullName,
+        'phone': phoneNumber,
+        'address_line1': street,
         'city': city,
         'state': state,
-        'postal_code': postalCode,
+        'post_code': postalCode,
         'country': country,
         'is_default': isDefault,
         'created_at': DateTime.now().toIso8601String(),
@@ -105,7 +103,7 @@ class ProfileService {
 
   // Update address
   Future<void> updateAddress({
-    required int addressId,
+    required String addressId,
     required String userId,
     required String fullName,
     required String phoneNumber,
@@ -117,7 +115,6 @@ class ProfileService {
     required bool isDefault,
   }) async {
     try {
-      // If setting as default, unset other defaults
       if (isDefault) {
         await _supabase
             .from('addresses')
@@ -126,12 +123,12 @@ class ProfileService {
       }
 
       await _supabase.from('addresses').update({
-        'full_name': fullName,
-        'phone_number': phoneNumber,
-        'street': street,
+        'recipient_name': fullName,
+        'phone': phoneNumber,
+        'address_line1': street,
         'city': city,
         'state': state,
-        'postal_code': postalCode,
+        'post_code': postalCode,
         'country': country,
         'is_default': isDefault,
       }).eq('address_id', addressId);
@@ -141,7 +138,7 @@ class ProfileService {
   }
 
   // Delete address
-  Future<void> deleteAddress(int addressId) async {
+  Future<void> deleteAddress(String addressId) async {
     try {
       await _supabase.from('addresses').delete().eq('address_id', addressId);
     } catch (e) {
@@ -154,8 +151,7 @@ class ProfileService {
     try {
       final response = await _supabase
           .from('orders')
-          .select(
-              'order_id, order_date, total_amount, order_status, delivery_status, created_at')
+          .select('order_id, order_date, order_subtotal, orders_status, delivery_id, created_at')
           .eq('user_id', userId)
           .order('created_at', ascending: false);
 
@@ -166,12 +162,12 @@ class ProfileService {
   }
 
   // Get order details
-  Future<List<Map<String, dynamic>>> getOrderDetails(int orderId) async {
+  Future<List<Map<String, dynamic>>> getOrderDetails(String orderId) async {
     try {
       final response = await _supabase
           .from('order_details')
           .select(
-              'order_detail_id, quantity_id, quantity, unit_price, products(product_id, product_name, product_price), quantities(size)')
+              'order_detail_id, quantity_id, quantity, unit_price, product_id, products(product_id, product_name, product_price), quantities(size)')
           .eq('order_id', orderId);
 
       return List<Map<String, dynamic>>.from(response);
