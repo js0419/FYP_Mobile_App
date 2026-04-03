@@ -23,8 +23,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _isLoading = false;
-  String _errorMessage = '';
-  String _successMessage = '';
+
+  // Field-level error messages
+  String? _firstNameError;
+  String? _lastNameError;
+  String? _emailError;
+  String? _phoneError;
+  String? _passwordError;
+  String? _confirmPasswordError;
+  String? _generalError;
 
   @override
   void dispose() {
@@ -37,63 +44,105 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
+  // Validate first name
+  void _validateFirstName(String value) {
+    setState(() {
+      _firstNameError = ValidationService.validateName(value, 'First name');
+    });
+  }
+
+  // Validate last name
+  void _validateLastName(String value) {
+    setState(() {
+      _lastNameError = ValidationService.validateName(value, 'Last name');
+    });
+  }
+
+  // Validate email
+  void _validateEmail(String value) {
+    setState(() {
+      _emailError = ValidationService.validateEmail(value);
+      // Clear general error when user changes email
+      if (_emailError == null) {
+        _generalError = null;
+      }
+    });
+  }
+
+  // Validate phone
+  void _validatePhone(String value) {
+    setState(() {
+      _phoneError = ValidationService.validatePhone(value);
+    });
+  }
+
+  // Validate password
+  void _validatePassword(String value) {
+    setState(() {
+      _passwordError = _validatePasswordStrength(value);
+    });
+  }
+
+  // Validate confirm password
+  void _validateConfirmPassword(String value) {
+    setState(() {
+      if (value != _passwordController.text) {
+        _confirmPasswordError = 'Passwords do not match';
+      } else if (value.isEmpty) {
+        _confirmPasswordError = 'Confirm password is required';
+      } else {
+        _confirmPasswordError = null;
+      }
+    });
+  }
+
+  // Enhanced password validation with special character requirement
+  String? _validatePasswordStrength(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Password is required';
+    }
+
+    if (value.length < 6) {
+      return 'Password must be at least 6 characters';
+    }
+
+    if (value.length > 50) {
+      return 'Password must be less than 50 characters';
+    }
+
+    // Check for special characters
+    if (!RegExp(r'[!@#$%^&*(),.?":{}|<>]').hasMatch(value)) {
+      return 'Password must include at least one special character (!@#\$%^&*)';
+    }
+
+    return null;
+  }
+
   Future<void> _handleRegister() async {
     // Validate all fields
-    final firstNameError =
-        ValidationService.validateName(_firstNameController.text, 'First name');
-    if (firstNameError != null) {
-      setState(() {
-        _errorMessage = firstNameError;
-      });
-      return;
-    }
+    _validateFirstName(_firstNameController.text);
+    _validateLastName(_lastNameController.text);
+    _validateEmail(_emailController.text);
+    _validatePhone(_phoneController.text);
+    _validatePassword(_passwordController.text);
+    _validateConfirmPassword(_confirmPasswordController.text);
 
-    final lastNameError =
-        ValidationService.validateName(_lastNameController.text, 'Last name');
-    if (lastNameError != null) {
+    // Check if any errors exist
+    if (_firstNameError != null ||
+        _lastNameError != null ||
+        _emailError != null ||
+        _phoneError != null ||
+        _passwordError != null ||
+        _confirmPasswordError != null) {
       setState(() {
-        _errorMessage = lastNameError;
-      });
-      return;
-    }
-
-    final emailError = ValidationService.validateEmail(_emailController.text);
-    if (emailError != null) {
-      setState(() {
-        _errorMessage = emailError;
-      });
-      return;
-    }
-
-    final phoneError =
-        ValidationService.validatePhone(_phoneController.text);
-    if (phoneError != null) {
-      setState(() {
-        _errorMessage = phoneError;
-      });
-      return;
-    }
-
-    if (_passwordController.text != _confirmPasswordController.text) {
-      setState(() {
-        _errorMessage = 'Passwords do not match';
-      });
-      return;
-    }
-
-    final passwordError =
-        ValidationService.validatePassword(_passwordController.text);
-    if (passwordError != null) {
-      setState(() {
-        _errorMessage = passwordError;
+        _generalError = 'Please fix all errors before continuing';
       });
       return;
     }
 
     setState(() {
       _isLoading = true;
-      _errorMessage = '';
-      _successMessage = '';
+      _generalError = null;
     });
 
     try {
@@ -110,20 +159,33 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _showConfirmationDialog(_emailController.text.trim());
       }
     } catch (e) {
-      String errorMessage = e
-          .toString()
-          .replaceAll('Exception: ', '')
-          .replaceAll('AuthException: ', '');
+      String errorMessage = e.toString();
 
-      // Handle rate limiting error
-      if (errorMessage.contains('rate limit') || errorMessage.contains('429')) {
-        errorMessage =
-            'Too many registration attempts. Please wait a few minutes before trying again.';
+      // Check specifically for Supabase Auth errors (these are the real duplicate errors)
+      if (errorMessage.contains('User already registered') ||
+          errorMessage.contains(
+            'A user with this email address already exists',
+          )) {
+        // Email already exists - show in email field
+        setState(() {
+          _emailError =
+              'This email is already registered. Please use a different email or try logging in.';
+          _generalError = null;
+        });
+      } else if (errorMessage.contains('rate limit') ||
+          errorMessage.contains('429')) {
+        setState(() {
+          _generalError =
+              'Too many registration attempts. Please wait a few minutes before trying again.';
+        });
+      } else {
+        // For other errors, show in general error
+        setState(() {
+          _generalError = errorMessage
+              .replaceAll('Exception: ', '')
+              .replaceAll('AuthException: ', '');
+        });
       }
-
-      setState(() {
-        _errorMessage = errorMessage;
-      });
     } finally {
       if (mounted) {
         setState(() {
@@ -163,10 +225,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               const SizedBox(height: 8),
               const Text(
                 'Your account has been created successfully!',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.black87,
-                ),
+                style: TextStyle(fontSize: 13, color: Colors.black87),
               ),
               const SizedBox(height: 16),
               Container(
@@ -220,10 +279,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               const SizedBox(height: 8),
               const Text(
                 '💡 If you don\'t see the email, check your spam folder',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.black54,
-                ),
+                style: TextStyle(fontSize: 11, color: Colors.black54),
               ),
             ],
           ),
@@ -244,7 +300,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   Navigator.of(context).pop(); // Close dialog
                   // Redirect to login page
                   Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    MaterialPageRoute(
+                      builder: (context) => const LoginScreen(),
+                    ),
                     (route) => false,
                   );
                 },
@@ -291,7 +349,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (_errorMessage.isNotEmpty)
+              // General error message (for non-field errors)
+              if (_generalError != null && _generalError!.isNotEmpty)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
@@ -303,12 +362,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.error_outline,
-                          color: Colors.red, size: 20),
+                      const Icon(
+                        Icons.error_outline,
+                        color: Colors.red,
+                        size: 20,
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          _errorMessage,
+                          _generalError!,
                           style: const TextStyle(
                             color: Colors.red,
                             fontSize: 12,
@@ -319,40 +381,53 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
 
+              // First Name
               _buildFormField(
                 label: 'FIRST NAME',
                 controller: _firstNameController,
                 hintText: 'e.g., John',
                 helperText: 'Letters only (2-50 characters)',
+                errorText: _firstNameError,
+                onChanged: _validateFirstName,
               ),
               const SizedBox(height: 20),
 
+              // Last Name
               _buildFormField(
                 label: 'LAST NAME',
                 controller: _lastNameController,
                 hintText: 'e.g., Doe',
                 helperText: 'Letters only (2-50 characters)',
+                errorText: _lastNameError,
+                onChanged: _validateLastName,
               ),
               const SizedBox(height: 20),
 
+              // Email
               _buildFormField(
                 label: 'EMAIL',
                 controller: _emailController,
                 hintText: 'email@example.com',
                 helperText: 'You\'ll use this to login',
                 keyboardType: TextInputType.emailAddress,
+                errorText: _emailError,
+                onChanged: _validateEmail,
               ),
               const SizedBox(height: 20),
 
+              // Phone Number
               _buildFormField(
                 label: 'PHONE NUMBER',
                 controller: _phoneController,
                 hintText: '0123456789',
                 helperText: 'Malaysian format (10-11 digits)',
                 keyboardType: TextInputType.phone,
+                errorText: _phoneError,
+                onChanged: _validatePhone,
               ),
               const SizedBox(height: 20),
 
+              // Password
               _buildPasswordField(
                 label: 'PASSWORD',
                 controller: _passwordController,
@@ -363,10 +438,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   });
                 },
                 hintText: 'Enter password',
-                helperText: 'At least 6 characters',
+                helperText:
+                    'At least 6 characters with special character (!@#\$%^&*)',
+                errorText: _passwordError,
+                onChanged: _validatePassword,
               ),
               const SizedBox(height: 20),
 
+              // Confirm Password
               _buildPasswordField(
                 label: 'CONFIRM PASSWORD',
                 controller: _confirmPasswordController,
@@ -377,6 +456,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   });
                 },
                 hintText: 'Confirm password',
+                errorText: _confirmPasswordError,
+                onChanged: _validateConfirmPassword,
               ),
               const SizedBox(height: 32),
 
@@ -420,10 +501,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   children: [
                     const Text(
                       'Already have an account? ',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.black54,
-                      ),
+                      style: TextStyle(fontSize: 12, color: Colors.black54),
                     ),
                     TextButton(
                       onPressed: () {
@@ -462,7 +540,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     required TextEditingController controller,
     required String hintText,
     String? helperText,
+    String? errorText,
     TextInputType keyboardType = TextInputType.text,
+    Function(String)? onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -480,37 +560,60 @@ class _RegisterScreenState extends State<RegisterScreen> {
           controller: controller,
           keyboardType: keyboardType,
           cursorColor: Colors.black,
+          onChanged: onChanged,
           decoration: InputDecoration(
             hintText: hintText,
             hintStyle: const TextStyle(fontSize: 13, color: Colors.black45),
             filled: true,
-            fillColor: const Color(0xFFF7F7F7),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            fillColor: errorText != null
+                ? const Color(0xFFFFF5F5)
+                : const Color(0xFFF7F7F7),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide.none,
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Colors.black12),
+              borderSide: BorderSide(
+                color: errorText != null ? Colors.red[300]! : Colors.black12,
+              ),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Colors.black, width: 1.5),
+              borderSide: BorderSide(
+                color: errorText != null ? Colors.red : Colors.black,
+                width: 1.5,
+              ),
             ),
           ),
         ),
-        if (helperText != null) ...[
-          const SizedBox(height: 6),
+        const SizedBox(height: 6),
+        if (errorText != null)
+          Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.red, size: 14),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  errorText,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Colors.red,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          )
+        else if (helperText != null)
           Text(
             helperText,
-            style: const TextStyle(
-              fontSize: 10,
-              color: Colors.black54,
-            ),
+            style: const TextStyle(fontSize: 10, color: Colors.black54),
           ),
-        ]
       ],
     );
   }
@@ -522,6 +625,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     required VoidCallback onToggle,
     required String hintText,
     String? helperText,
+    String? errorText,
+    Function(String)? onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -539,13 +644,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
           controller: controller,
           obscureText: obscureText,
           cursorColor: Colors.black,
+          onChanged: onChanged,
           decoration: InputDecoration(
             hintText: hintText,
             hintStyle: const TextStyle(fontSize: 13, color: Colors.black45),
             filled: true,
-            fillColor: const Color(0xFFF7F7F7),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            fillColor: errorText != null
+                ? const Color(0xFFFFF5F5)
+                : const Color(0xFFF7F7F7),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
             suffixIcon: IconButton(
               icon: Icon(
                 obscureText
@@ -562,24 +672,42 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Colors.black12),
+              borderSide: BorderSide(
+                color: errorText != null ? Colors.red[300]! : Colors.black12,
+              ),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Colors.black, width: 1.5),
+              borderSide: BorderSide(
+                color: errorText != null ? Colors.red : Colors.black,
+                width: 1.5,
+              ),
             ),
           ),
         ),
-        if (helperText != null) ...[
-          const SizedBox(height: 6),
+        const SizedBox(height: 6),
+        if (errorText != null)
+          Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.red, size: 14),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  errorText,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Colors.red,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          )
+        else if (helperText != null)
           Text(
             helperText,
-            style: const TextStyle(
-              fontSize: 10,
-              color: Colors.black54,
-            ),
+            style: const TextStyle(fontSize: 10, color: Colors.black54),
           ),
-        ]
       ],
     );
   }

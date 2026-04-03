@@ -6,9 +6,9 @@ class AuthService {
   final SupabaseClient _supabase = Supabase.instance.client;
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
-  static const String _emailKey = 'stored_email';
-  static const String _passwordKey = 'stored_password';
-  static const String _rememberMeKey = 'remember_me';
+  static const String _emailKey = 'saved_email';
+  static const String _passwordKey = 'saved_password';
+  static const String _rememberMeKey = 'remember_me_enabled';
 
   bool isLoggedIn() {
     return _supabase.auth.currentUser != null;
@@ -52,7 +52,6 @@ class AuthService {
     }
   }
 
-  // Register with email and password - Fixed to insert phone number
   Future<AuthResponse> register({
     required String email,
     required String password,
@@ -74,26 +73,64 @@ class AuthService {
       final phoneError = ValidationService.validatePhone(phoneNumber);
       if (phoneError != null) throw Exception(phoneError);
 
-      final passwordError = ValidationService.validatePassword(password);
+      final passwordError = _validatePasswordStrength(password);
       if (passwordError != null) throw Exception(passwordError);
 
+      // Sign up with Supabase Auth AND pass user data as metadata
       final response = await _supabase.auth.signUp(
         email: email.trim(),
         password: password,
+        data: {
+          'full_name': '${firstName.trim()} ${lastName.trim()}',
+          'phone': phoneNumber.trim(),
+        },
       );
 
       if (response.user != null) {
-        // Create user profile with phone number
-        await _supabase.from('users').insert({
-          'user_id': response.user!.id,
-          'user_email': email.trim(),
-          'user_name': '${firstName.trim()} ${lastName.trim()}',
-          'user_phone': phoneNumber.trim(),
-          'status': 'active',
-          'role': 'customer',
-          'created_at': DateTime.now().toIso8601String(),
-          'updated_at': DateTime.now().toIso8601String(),
-        });
+        try {
+          final userId = response.user!.id;
+          final fullName = '${firstName.trim()} ${lastName.trim()}';
+          final now = DateTime.now().toIso8601String();
+
+          print('DEBUG: Creating user profile for $userId');
+          print('DEBUG: Name: $fullName, Phone: $phoneNumber, Email: $email');
+
+          // Insert user profile (trigger will create base profile, this updates it)
+          final existingUser = await _supabase
+              .from('users')
+              .select()
+              .eq('user_id', userId)
+              .maybeSingle();
+
+          if (existingUser != null) {
+            // Update existing profile created by trigger
+            await _supabase.from('users').update({
+              'user_name': fullName,
+              'user_phone': phoneNumber.trim(),
+              'user_email': email.trim(),
+              'updated_at': now,
+            }).eq('user_id', userId);
+
+            print('DEBUG: User profile updated with phone and name');
+          } else {
+            // Insert if trigger didn't create it
+            await _supabase.from('users').insert({
+              'user_id': userId,
+              'user_name': fullName,
+              'user_phone': phoneNumber.trim(),
+              'user_email': email.trim(),
+              'status': 'active',
+              'role': 'customer',
+              'created_at': now,
+              'updated_at': now,
+            });
+
+            print('DEBUG: User profile created');
+          }
+        } catch (dbError) {
+          print('ERROR: Failed to update user profile: $dbError');
+          // Don't rethrow - signup was successful
+        }
       }
 
       return response;
@@ -104,10 +141,29 @@ class AuthService {
     }
   }
 
+  String? _validatePasswordStrength(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Password is required';
+    }
+
+    if (value.length < 6) {
+      return 'Password must be at least 6 characters';
+    }
+
+    if (value.length > 50) {
+      return 'Password must be less than 50 characters';
+    }
+
+    if (!RegExp(r'[!@#$%^&*(),.?":{}|<>]').hasMatch(value)) {
+      return 'Password must include at least one special character (!@#\$%^&*)';
+    }
+
+    return null;
+  }
+
   Future<void> logout() async {
     try {
       await _supabase.auth.signOut();
-      await _clearStoredCredentials();
     } catch (e) {
       throw Exception('Logout failed: $e');
     }
@@ -131,7 +187,7 @@ class AuthService {
 
   Future<void> updatePassword(String newPassword) async {
     try {
-      final passwordError = ValidationService.validatePassword(newPassword);
+      final passwordError = _validatePasswordStrength(newPassword);
       if (passwordError != null) throw Exception(passwordError);
 
       await _supabase.auth.updateUser(
@@ -150,37 +206,17 @@ class AuthService {
   }
 
   Future<Map<String, String>> getSavedCredentials() async {
-    final email = await _secureStorage.read(key: _emailKey);
-    final password = await _secureStorage.read(key: _passwordKey);
+    final email = await _secureStorage.read(key: _emailKey) ?? '';
+    final password = await _secureStorage.read(key: _passwordKey) ?? '';
 
     return {
-      'email': email ?? '',
-      'password': password ?? '',
+      'email': email,
+      'password': password,
     };
   }
 
-  Future<bool> autoLogin() async {
-    try {
-      if (!await hasSavedCredentials()) {
-        return false;
-      }
-
-      final credentials = await getSavedCredentials();
-      if (credentials['email']!.isEmpty || credentials['password']!.isEmpty) {
-        return false;
-      }
-
-      await login(
-        email: credentials['email']!,
-        password: credentials['password']!,
-        rememberMe: true,
-      );
-
-      return true;
-    } catch (e) {
-      await _clearStoredCredentials();
-      return false;
-    }
+  Future<void> forgetDevice() async {
+    await _clearStoredCredentials();
   }
 
   Future<void> _clearStoredCredentials() async {

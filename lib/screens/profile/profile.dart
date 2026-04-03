@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../services/profile_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../auth/login.dart';
 import 'edit_profile.dart';
 import 'edit_password.dart';
 import 'address.dart';
+import 'order_history.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -30,20 +32,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _userProfileFuture = _profileService.getUserProfile(user.id);
     }
   }
-
-  String _getProfileInitials(String fullName) {
-  if (fullName.isEmpty || fullName == 'User Name') return 'U';
-  
-  final trimmed = fullName.trim();
-  if (trimmed.isEmpty) return 'U';
-  
-  final nameParts = trimmed.split(' ').where((part) => part.isNotEmpty).toList();
-  
-  if (nameParts.isEmpty) return 'U';
-  if (nameParts.length == 1) return nameParts[0][0].toUpperCase();
-  
-  return '${nameParts[0][0]}${nameParts[1][0]}'.toUpperCase();
-}
 
   void _handleLogout() {
     showDialog(
@@ -89,6 +77,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  String _getProfileInitials(String fullName) {
+    if (fullName.isEmpty || fullName == 'User Name') return 'U';
+
+    final trimmed = fullName.trim();
+    if (trimmed.isEmpty) return 'U';
+
+    final nameParts =
+        trimmed.split(' ').where((part) => part.isNotEmpty).toList();
+
+    if (nameParts.isEmpty) return 'U';
+    if (nameParts.length == 1) return nameParts[0][0].toUpperCase();
+
+    return '${nameParts[0][0]}${nameParts[1][0]}'.toUpperCase();
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = _authService.getCurrentUser();
@@ -117,11 +120,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
-                  Icons.person_outline,
-                  size: 64,
-                  color: Colors.black26,
-                ),
+                const Icon(Icons.person_outline,
+                    size: 64, color: Colors.black26),
                 const SizedBox(height: 16),
                 const Text(
                   'NOT LOGGED IN',
@@ -134,7 +134,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: 8),
                 const Text(
                   'Please login to view your profile',
-                  style: TextStyle(fontSize: 12, color: Colors.black54),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.black54,
+                  ),
                 ),
                 const SizedBox(height: 32),
                 SizedBox(
@@ -228,6 +231,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       children: [
                         Row(
                           children: [
+                            // Profile Picture
                             Container(
                               width: 60,
                               height: 60,
@@ -235,17 +239,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 color: Colors.black,
                                 borderRadius: BorderRadius.circular(30),
                               ),
-                              child: Center(
-                                child: Text(
-                                  _getProfileInitials(
-                                    profile?['user_name'] ?? 'User',
-                                  ),
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(30),
+                                child: profile?['user_profile_pic'] != null &&
+                                        profile!['user_profile_pic']
+                                            .toString()
+                                            .isNotEmpty
+                                    ? Image.network(
+                                        profile!['user_profile_pic'],
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) {
+                                          return Center(
+                                            child: Text(
+                                              _getProfileInitials(
+                                                  profile?['user_name'] ??
+                                                      'User'),
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 20,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      )
+                                    : Center(
+                                        child: Text(
+                                          _getProfileInitials(
+                                              profile?['user_name'] ??
+                                                  'User'),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
                               ),
                             ),
                             const SizedBox(width: 16),
@@ -310,8 +340,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => EditProfileScreen(
-                                    userProfile: profile ?? {},
-                                  ),
+                                      userProfile: profile ?? {}),
                                 ),
                               );
                               if (result == true) {
@@ -373,6 +402,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     },
                   ),
 
+                  _buildMenuTile(
+                    icon: Icons.shopping_bag_outlined,
+                    title: 'Order History',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const OrderHistoryScreen(),
+                        ),
+                      );
+                    },
+                  ),
+
                   const SizedBox(height: 24),
 
                   // Logout Button
@@ -422,11 +464,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             letterSpacing: 0.5,
           ),
         ),
-        trailing: const Icon(
-          Icons.arrow_forward_ios,
-          color: Colors.black54,
-          size: 16,
-        ),
+        trailing: const Icon(Icons.arrow_forward_ios,
+            color: Colors.black54, size: 16),
         onTap: onTap,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),

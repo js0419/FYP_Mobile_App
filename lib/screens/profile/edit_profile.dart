@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../services/profile_service.dart';
 import '../../services/validation_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:io';
 
 class EditProfileScreen extends StatefulWidget {
   final Map<String, dynamic> userProfile;
@@ -18,14 +20,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _lastNameController;
   late TextEditingController _phoneController;
   late TextEditingController _emailController;
-  late TextEditingController _profilePicController;
 
   String? _selectedGender;
+  File? _selectedImage;
+  String? _profilePicUrl;
+  bool _isLoadingImage = false;
   bool _isLoading = false;
   String _errorMessage = '';
   String _successMessage = '';
 
   final List<String> _genderOptions = ['Male', 'Female', 'Other'];
+  final ImagePicker _imagePicker = ImagePicker();
 
   @override
   void initState() {
@@ -41,8 +46,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         TextEditingController(text: widget.userProfile['user_phone'] ?? '');
     _emailController = TextEditingController(
         text: Supabase.instance.client.auth.currentUser?.email ?? '');
-    _profilePicController =
-        TextEditingController(text: widget.userProfile['user_profile_pic'] ?? '');
+
+    _profilePicUrl = widget.userProfile['user_profile_pic'];
 
     // Set initial gender
     final gender = widget.userProfile['user_gender'];
@@ -57,8 +62,56 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _lastNameController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
-    _profilePicController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final pickedFile = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+      );
+
+      if (pickedFile != null) {
+        setState(() {
+          _selectedImage = File(pickedFile.path);
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to pick image: $e';
+      });
+    }
+  }
+
+  Future<void> _removeImage() async {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Remove Profile Picture?'),
+          content: const Text('Are you sure you want to remove your profile picture?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                setState(() {
+                  _selectedImage = null;
+                  _profilePicUrl = null;
+                });
+              },
+              child: const Text('Remove', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _updateProfile() async {
@@ -102,17 +155,38 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         throw Exception('User not found');
       }
 
+      String? uploadedPicUrl = _profilePicUrl;
+
+      // Upload image if selected
+      if (_selectedImage != null) {
+        setState(() {
+          _isLoadingImage = true;
+        });
+
+        uploadedPicUrl =
+            await _profileService.uploadProfilePicture(
+          userId: user.id,
+          imageFile: _selectedImage!,
+        );
+
+        setState(() {
+          _isLoadingImage = false;
+        });
+      }
+
+      // Update profile
       await _profileService.updateUserProfile(
         userId: user.id,
         firstName: _firstNameController.text.trim(),
         lastName: _lastNameController.text.trim(),
         phoneNumber: _phoneController.text.trim(),
         gender: _selectedGender?.toLowerCase(),
-        profilePic: _profilePicController.text.trim(),
+        profilePicUrl: uploadedPicUrl,
       );
 
       setState(() {
         _successMessage = 'Profile updated successfully!';
+        _selectedImage = null;
       });
 
       await Future.delayed(const Duration(seconds: 2));
@@ -127,6 +201,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
+          _isLoadingImage = false;
         });
       }
     }
@@ -196,6 +271,126 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ),
                   ),
                 ),
+
+              // Profile Picture Section
+              const Text(
+                'PROFILE PICTURE',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              Center(
+                child: Column(
+                  children: [
+                    // Profile Picture Display
+                    Container(
+                      width: 120,
+                      height: 120,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0F0F0),
+                        borderRadius: BorderRadius.circular(60),
+                        border: Border.all(color: Colors.black12, width: 2),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(60),
+                        child: _selectedImage != null
+                            ? Image.file(
+                                _selectedImage!,
+                                fit: BoxFit.cover,
+                              )
+                            : _profilePicUrl != null && _profilePicUrl!.isNotEmpty
+                                ? Image.network(
+                                    _profilePicUrl!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return const Icon(
+                                        Icons.person,
+                                        size: 60,
+                                        color: Colors.black54,
+                                      );
+                                    },
+                                  )
+                                : const Icon(
+                                    Icons.person,
+                                    size: 60,
+                                    color: Colors.black54,
+                                  ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Upload/Change Button
+                    SizedBox(
+                      width: 200,
+                      height: 40,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                        ),
+                        onPressed: _isLoadingImage ? null : _pickImage,
+                        icon: _isLoadingImage
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.image_outlined, size: 18),
+                        label: Text(
+                          _selectedImage != null ? 'CHANGE PICTURE' : 'UPLOAD PICTURE',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // Remove Button (only if picture exists)
+                    if (_profilePicUrl != null && _profilePicUrl!.isNotEmpty || _selectedImage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: SizedBox(
+                          width: 200,
+                          height: 40,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red,
+                              side: const BorderSide(color: Colors.red),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                            onPressed: _removeImage,
+                            icon: const Icon(Icons.delete_outline, size: 18),
+                            label: const Text(
+                              'REMOVE',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
 
               _buildFormField(
                 label: 'FIRST NAME',
@@ -271,48 +466,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
-
-              // Profile Picture URL
-              _buildFormField(
-                label: 'PROFILE PICTURE URL',
-                controller: _profilePicController,
-                hintText: 'e.g., profile.png',
-                helperText: 'Image filename from storage (optional)',
-              ),
-              const SizedBox(height: 8),
-              if (_profilePicController.text.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0F0F0),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '📸 Current Profile Picture:',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black54,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _profilePicController.text,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.black87,
-                          fontStyle: FontStyle.italic,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
               const SizedBox(height: 20),
 
               _buildFormField(

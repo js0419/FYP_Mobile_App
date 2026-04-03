@@ -1,7 +1,10 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 
 class ProfileService {
   final SupabaseClient _supabase = Supabase.instance.client;
+  static const String _profilePicsBucket = 'profile_pictures';
 
   // Get user profile data
   Future<Map<String, dynamic>?> getUserProfile(String userId) async {
@@ -18,14 +21,52 @@ class ProfileService {
     }
   }
 
-  // Update user profile - Now includes gender and profile picture
+  // Upload profile picture to storage and get public URL
+  Future<String> uploadProfilePicture({
+    required String userId,
+    required File imageFile,
+  }) async {
+    try {
+      final fileName = 'profile_$userId.jpg';
+      final filePath = 'profile_pictures/$userId/$fileName';
+
+      // Delete old picture if exists
+      try {
+        await _supabase.storage
+            .from(_profilePicsBucket)
+            .remove(['profile_pictures/$userId/$fileName']);
+      } catch (e) {
+        print('No previous file to delete: $e');
+      }
+
+      // Upload new picture
+      await _supabase.storage
+          .from(_profilePicsBucket)
+          .upload(
+            filePath,
+            imageFile,
+            fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+          );
+
+      // Get public URL
+      final publicUrl = _supabase.storage
+          .from(_profilePicsBucket)
+          .getPublicUrl(filePath);
+
+      return publicUrl;
+    } catch (e) {
+      throw Exception('Failed to upload profile picture: $e');
+    }
+  }
+
+  // Update user profile with picture URL
   Future<void> updateUserProfile({
     required String userId,
     required String firstName,
     required String lastName,
     required String phoneNumber,
     String? gender,
-    String? profilePic,
+    String? profilePicUrl,
   }) async {
     try {
       final updateData = {
@@ -34,12 +75,11 @@ class ProfileService {
         'updated_at': DateTime.now().toIso8601String(),
       };
 
-      // Add optional fields if provided
       if (gender != null && gender.isNotEmpty) {
         updateData['user_gender'] = gender;
       }
-      if (profilePic != null && profilePic.isNotEmpty) {
-        updateData['user_profile_pic'] = profilePic;
+      if (profilePicUrl != null && profilePicUrl.isNotEmpty) {
+        updateData['user_profile_pic'] = profilePicUrl;
       }
 
       await _supabase.from('users').update(updateData).eq('user_id', userId);
@@ -48,7 +88,34 @@ class ProfileService {
     }
   }
 
-  // Update password
+  // Delete profile picture
+  Future<void> deleteProfilePicture(String userId) async {
+    try {
+      await _supabase.storage
+          .from(_profilePicsBucket)
+          .remove(['profile_pictures/$userId/profile_$userId.jpg']);
+    } catch (e) {
+      throw Exception('Failed to delete profile picture: $e');
+    }
+  }
+
+  // Get profile picture URL
+  String getProfilePictureUrl(String? picturePath, String userId) {
+    if (picturePath == null || picturePath.isEmpty) {
+      return '';
+    }
+
+    if (picturePath.startsWith('http://') || picturePath.startsWith('https://')) {
+      return picturePath;
+    }
+
+    return _supabase.storage
+        .from(_profilePicsBucket)
+        .getPublicUrl('profile_pictures/$userId/$picturePath');
+  }
+
+  // ... rest of the existing methods (addresses, orders, etc.)
+  
   Future<void> updatePassword(String newPassword) async {
     try {
       await _supabase.auth.updateUser(
@@ -61,7 +128,6 @@ class ProfileService {
     }
   }
 
-  // Get user addresses
   Future<List<Map<String, dynamic>>> getUserAddresses(String userId) async {
     try {
       final response = await _supabase
@@ -76,7 +142,6 @@ class ProfileService {
     }
   }
 
-  // Add new address
   Future<void> addAddress({
     required String userId,
     required String fullName,
@@ -113,7 +178,6 @@ class ProfileService {
     }
   }
 
-  // Update address
   Future<void> updateAddress({
     required String addressId,
     required String userId,
@@ -149,7 +213,6 @@ class ProfileService {
     }
   }
 
-  // Delete address
   Future<void> deleteAddress(String addressId) async {
     try {
       await _supabase.from('addresses').delete().eq('address_id', addressId);
@@ -158,7 +221,6 @@ class ProfileService {
     }
   }
 
-  // Get order history
   Future<List<Map<String, dynamic>>> getOrderHistory(String userId) async {
     try {
       final response = await _supabase
@@ -174,7 +236,6 @@ class ProfileService {
     }
   }
 
-  // Get order details
   Future<List<Map<String, dynamic>>> getOrderDetails(String orderId) async {
     try {
       final response = await _supabase
