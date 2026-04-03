@@ -105,36 +105,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
         phoneNumber: _phoneController.text.trim(),
       );
 
-      setState(() {
-        _successMessage =
-            'Registration successful! Please check your email to confirm your account.';
-      });
-
+      // Show confirmation dialog
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Registration successful! Check your email to confirm. Redirecting to login...'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
-          ),
-        );
-
-        // Wait 3 seconds then redirect to login
-        await Future.delayed(const Duration(seconds: 3));
-        if (mounted) {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => const LoginScreen()),
-            (route) => false,
-          );
-        }
+        _showConfirmationDialog(_emailController.text.trim());
       }
     } catch (e) {
+      String errorMessage = e
+          .toString()
+          .replaceAll('Exception: ', '')
+          .replaceAll('AuthException: ', '');
+
+      // Handle rate limiting error
+      if (errorMessage.contains('rate limit') || errorMessage.contains('429')) {
+        errorMessage =
+            'Too many registration attempts. Please wait a few minutes before trying again.';
+      }
+
       setState(() {
-        _errorMessage = e
-            .toString()
-            .replaceAll('Exception: ', '')
-            .replaceAll('AuthException: ', '');
+        _errorMessage = errorMessage;
       });
     } finally {
       if (mounted) {
@@ -143,6 +131,137 @@ class _RegisterScreenState extends State<RegisterScreen> {
         });
       }
     }
+  }
+
+  void _showConfirmationDialog(String email) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.green, size: 28),
+              SizedBox(width: 12),
+              Text(
+                'Registration Successful!',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 8),
+              const Text(
+                'Your account has been created successfully!',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0F8FF),
+                  border: Border.all(color: Colors.blue[200]!),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Please confirm your email:',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.blue,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      email,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black54,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      '📧 Check your inbox and click the confirmation link',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.black54,
+                        height: 1.6,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                '⏱️ The confirmation link will expire in 1 hour',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.orange,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '💡 If you don\'t see the email, check your spam folder',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.black54,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                onPressed: () {
+                  Navigator.of(context).pop(); // Close dialog
+                  // Redirect to login page
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    (route) => false,
+                  );
+                },
+                child: const Text(
+                  'GO TO LOGIN',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -182,31 +301,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     border: Border.all(color: Colors.red[200]!),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text(
-                    _errorMessage,
-                    style: const TextStyle(
-                      color: Colors.red,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-
-              if (_successMessage.isNotEmpty)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.only(bottom: 20),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8F5E9),
-                    border: Border.all(color: Colors.green[200]!),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    _successMessage,
-                    style: const TextStyle(
-                      color: Colors.green,
-                      fontSize: 12,
-                    ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline,
+                          color: Colors.red, size: 20),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _errorMessage,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
 
@@ -388,8 +497,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide:
-                  const BorderSide(color: Colors.black, width: 1.5),
+              borderSide: const BorderSide(color: Colors.black, width: 1.5),
             ),
           ),
         ),
@@ -458,8 +566,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide:
-                  const BorderSide(color: Colors.black, width: 1.5),
+              borderSide: const BorderSide(color: Colors.black, width: 1.5),
             ),
           ),
         ),

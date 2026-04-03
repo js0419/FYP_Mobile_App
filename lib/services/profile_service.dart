@@ -18,19 +18,31 @@ class ProfileService {
     }
   }
 
-  // Update user profile - Fixed column names to match database
+  // Update user profile - Now includes gender and profile picture
   Future<void> updateUserProfile({
     required String userId,
     required String firstName,
     required String lastName,
     required String phoneNumber,
+    String? gender,
+    String? profilePic,
   }) async {
     try {
-      await _supabase.from('users').update({
+      final updateData = {
         'user_name': '$firstName $lastName',
         'user_phone': phoneNumber,
         'updated_at': DateTime.now().toIso8601String(),
-      }).eq('user_id', userId);
+      };
+
+      // Add optional fields if provided
+      if (gender != null && gender.isNotEmpty) {
+        updateData['user_gender'] = gender;
+      }
+      if (profilePic != null && profilePic.isNotEmpty) {
+        updateData['user_profile_pic'] = profilePic;
+      }
+
+      await _supabase.from('users').update(updateData).eq('user_id', userId);
     } catch (e) {
       throw Exception('Failed to update profile: $e');
     }
@@ -151,7 +163,8 @@ class ProfileService {
     try {
       final response = await _supabase
           .from('orders')
-          .select('order_id, order_date, order_subtotal, orders_status, delivery_id, created_at')
+          .select(
+              'order_id, order_date, order_subtotal, orders_status, delivery_id, created_at')
           .eq('user_id', userId)
           .order('created_at', ascending: false);
 

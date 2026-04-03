@@ -18,10 +18,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _lastNameController;
   late TextEditingController _phoneController;
   late TextEditingController _emailController;
+  late TextEditingController _profilePicController;
 
+  String? _selectedGender;
   bool _isLoading = false;
   String _errorMessage = '';
   String _successMessage = '';
+
+  final List<String> _genderOptions = ['Male', 'Female', 'Other'];
 
   @override
   void initState() {
@@ -37,6 +41,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         TextEditingController(text: widget.userProfile['user_phone'] ?? '');
     _emailController = TextEditingController(
         text: Supabase.instance.client.auth.currentUser?.email ?? '');
+    _profilePicController =
+        TextEditingController(text: widget.userProfile['user_profile_pic'] ?? '');
+
+    // Set initial gender
+    final gender = widget.userProfile['user_gender'];
+    if (gender != null) {
+      _selectedGender = gender[0].toUpperCase() + gender.substring(1);
+    }
   }
 
   @override
@@ -45,6 +57,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _lastNameController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
+    _profilePicController.dispose();
     super.dispose();
   }
 
@@ -94,6 +107,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         firstName: _firstNameController.text.trim(),
         lastName: _lastNameController.text.trim(),
         phoneNumber: _phoneController.text.trim(),
+        gender: _selectedGender?.toLowerCase(),
+        profilePic: _profilePicController.text.trim(),
       );
 
       setState(() {
@@ -207,6 +222,99 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
               const SizedBox(height: 20),
 
+              // Gender Dropdown
+              const Text(
+                'GENDER',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.black12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _selectedGender,
+                    isExpanded: true,
+                    hint: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        'Select your gender',
+                        style: TextStyle(color: Colors.black45, fontSize: 13),
+                      ),
+                    ),
+                    items: _genderOptions.map((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text(value),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (String? newValue) {
+                      setState(() {
+                        _selectedGender = newValue;
+                      });
+                    },
+                    icon: const Padding(
+                      padding: EdgeInsets.only(right: 16),
+                      child: Icon(Icons.arrow_drop_down,
+                          color: Colors.black54, size: 24),
+                    ),
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Profile Picture URL
+              _buildFormField(
+                label: 'PROFILE PICTURE URL',
+                controller: _profilePicController,
+                hintText: 'e.g., profile.png',
+                helperText: 'Image filename from storage (optional)',
+              ),
+              const SizedBox(height: 8),
+              if (_profilePicController.text.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0F0F0),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '📸 Current Profile Picture:',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _profilePicController.text,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.black87,
+                          fontStyle: FontStyle.italic,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 20),
+
               _buildFormField(
                 label: 'EMAIL',
                 controller: _emailController,
@@ -282,9 +390,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           cursorColor: Colors.black,
           decoration: InputDecoration(
             hintText: hintText,
-            hintStyle: const TextStyle(fontSize: 13, color: Colors.black45),
+            hintStyle:
+                const TextStyle(fontSize: 13, color: Colors.black45),
             filled: true,
-            fillColor: enabled ? const Color(0xFFF7F7F7) : const Color(0xFFF0F0F0),
+            fillColor:
+                enabled ? const Color(0xFFF7F7F7) : const Color(0xFFF0F0F0),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             border: OutlineInputBorder(

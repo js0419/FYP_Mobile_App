@@ -31,6 +31,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  String _getProfileInitials(String fullName) {
+  if (fullName.isEmpty || fullName == 'User Name') return 'U';
+  
+  final trimmed = fullName.trim();
+  if (trimmed.isEmpty) return 'U';
+  
+  final nameParts = trimmed.split(' ').where((part) => part.isNotEmpty).toList();
+  
+  if (nameParts.isEmpty) return 'U';
+  if (nameParts.length == 1) return nameParts[0][0].toUpperCase();
+  
+  return '${nameParts[0][0]}${nameParts[1][0]}'.toUpperCase();
+}
+
   void _handleLogout() {
     showDialog(
       context: context,
@@ -83,14 +97,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (user == null) {
       return Scaffold(
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Colors.black),
+          title: const Text(
+            'MY PROFILE',
+            style: TextStyle(
+              color: Colors.black,
+              fontSize: 14,
+              letterSpacing: 1.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24.0),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.person_outline,
-                    size: 64, color: Colors.black26),
+                const Icon(
+                  Icons.person_outline,
+                  size: 64,
+                  color: Colors.black26,
+                ),
                 const SizedBox(height: 16),
                 const Text(
                   'NOT LOGGED IN',
@@ -103,10 +134,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: 8),
                 const Text(
                   'Please login to view your profile',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.black54,
-                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
                 ),
                 const SizedBox(height: 32),
                 SizedBox(
@@ -122,11 +150,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     onPressed: () {
-                      Navigator.of(context).pushAndRemoveUntil(
+                      Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (context) => const LoginScreen(),
                         ),
-                        (route) => false,
                       );
                     },
                     child: const Text(
@@ -210,7 +237,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                               child: Center(
                                 child: Text(
-                                  '${profile?['first_name']?[0] ?? 'U'}${profile?['last_name']?[0] ?? 'S'}',
+                                  _getProfileInitials(
+                                    profile?['user_name'] ?? 'User',
+                                  ),
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 20,
@@ -225,7 +254,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    '${profile?['first_name'] ?? 'User'} ${profile?['last_name'] ?? 'Name'}',
+                                    profile?['user_name'] ?? 'User Name',
                                     style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,
@@ -242,12 +271,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    profile?['phone_number'] ?? 'No phone',
+                                    profile?['user_phone'] ?? 'No phone',
                                     style: const TextStyle(
                                       fontSize: 11,
                                       color: Colors.black54,
                                     ),
                                   ),
+                                  if (profile?['user_gender'] != null) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Gender: ${profile!['user_gender'][0].toUpperCase()}${profile['user_gender'].substring(1)}',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.black54,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -270,8 +309,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               final result = await Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) =>
-                                      EditProfileScreen(userProfile: profile ?? {}),
+                                  builder: (context) => EditProfileScreen(
+                                    userProfile: profile ?? {},
+                                  ),
                                 ),
                               );
                               if (result == true) {
@@ -295,7 +335,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Menu Section
+                  // Account Settings Section
                   const Text(
                     'ACCOUNT SETTINGS',
                     style: TextStyle(
@@ -307,7 +347,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 12),
 
-                  // Change Password
                   _buildMenuTile(
                     icon: Icons.lock_outline,
                     title: 'Change Password',
@@ -321,7 +360,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     },
                   ),
 
-                  // Delivery Addresses
                   _buildMenuTile(
                     icon: Icons.location_on_outlined,
                     title: 'Delivery Addresses',
@@ -384,8 +422,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             letterSpacing: 0.5,
           ),
         ),
-        trailing:
-            const Icon(Icons.arrow_forward_ios, color: Colors.black54, size: 16),
+        trailing: const Icon(
+          Icons.arrow_forward_ios,
+          color: Colors.black54,
+          size: 16,
+        ),
         onTap: onTap,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
