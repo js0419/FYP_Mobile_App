@@ -352,7 +352,7 @@ grant select on public.v_product_catalogue to anon, authenticated;
 
 
 -- =====================================================
--- 6. AI RECOMMENDATION FUNCTION
+-- 6. AI RECOMMENDATION FUNCTION (Content-Based Expert System)
 -- =====================================================
 create or replace function public.recommend_outfit_set(
   p_height_cm numeric default null,
@@ -380,18 +380,13 @@ declare
   v_style_id uuid;
   v_bmi numeric;
   v_sizes size_enum[];
+  v_recommendations_json jsonb;
 begin
+  -- STEP 1 & 3: Retrieve and validate inputs (Height, Weight, Gender)
   select
     coalesce(p_height_cm, u.height_cm),
     coalesce(p_weight_kg, u.weight_kg),
-    coalesce(
-      p_gender,
-      case
-        when u.user_gender = 'male' then 'men'::product_gender_enum
-        when u.user_gender = 'female' then 'women'::product_gender_enum
-        else 'unisex'::product_gender_enum
-      end
-    )
+    coalesce(p_gender, case when u.user_gender = 'male' then 'men'::product_gender_enum when u.user_gender = 'female' then 'women'::product_gender_enum else 'unisex'::product_gender_enum end)
   into v_height, v_weight, v_gender
   from public.users u
   where u.user_id = auth.uid();
@@ -400,150 +395,65 @@ begin
     raise exception 'Height and weight are required for recommendation.';
   end if;
 
-  select s.style_id
-  into v_style_id
+  -- Resolve the requested style ID
+  select s.style_id into v_style_id
   from public.styles s
-  where lower(s.style_name) = lower(
-    coalesce(
-      p_style_name,
-      (
-        select s2.style_name
-        from public.users u2
-        left join public.styles s2 on s2.style_id = u2.preferred_style_id
-        where u2.user_id = auth.uid()
-      )
-    )
-  )
+  where lower(s.style_name) = lower(coalesce(p_style_name, (select s2.style_name from public.users u2 left join public.styles s2 on s2.style_id = u2.preferred_style_id where u2.user_id = auth.uid())))
   limit 1;
 
+  -- STEP 4: AI Logic - BMI Calculation for Size Constraints
   v_bmi := v_weight / power(v_height / 100.0, 2);
 
-  if v_bmi < 18.5 then
-    v_sizes := array['xs', 's']::size_enum[];
-  elsif v_bmi < 23 then
-    v_sizes := array['s', 'm']::size_enum[];
-  elsif v_bmi < 27.5 then
-    v_sizes := array['m', 'l']::size_enum[];
-  else
-    v_sizes := array['l', 'xl', 'xxl']::size_enum[];
+  if v_bmi < 18.5 then v_sizes := array['xs', 's']::size_enum[];
+  elsif v_bmi < 23 then v_sizes := array['s', 'm']::size_enum[];
+  elsif v_bmi < 27.5 then v_sizes := array['m', 'l']::size_enum[];
+  else v_sizes := array['l', 'xl', 'xxl']::size_enum[];
   end if;
 
-  return query
+  -- Create a temporary table to hold the scored recommendations
+  create temp table if not exists temp_recs (
+    category_name text, product_id uuid, product_name text, product_price numeric, recommended_size text, matched_styles text[], score numeric
+  ) on commit drop;
+  
+  truncate table temp_recs;
+
+  -- STEP 4 & 5: Compute Compatibility Score & Generate Ranked List
+  insert into temp_recs
   with scored as (
     select
-      c.category_name,
-      p.product_id,
-      p.product_name,
-      p.product_price,
-      coalesce(
-        (
-          select q1.size::text
-          from public.quantities q1
-          where q1.product_id = p.product_id
-            and q1.product_stock > 0
-            and (q1.size = any(v_sizes) or q1.size = 'free_size')
-          order by case q1.size
-            when 'xs' then 1
-            when 's' then 2
-            when 'm' then 3
-            when 'l' then 4
-            when 'xl' then 5
-            when 'xxl' then 6
-            when 'free_size' then 7
-          end
-          limit 1
-        ),
-        'out_of_stock'
-      ) as recommended_size,
-      coalesce(
-        array_agg(distinct s.style_name) filter (where s.style_name is not null),
-        '{}'::text[]
-      ) as matched_styles,
+      c.category_name, p.product_id, p.product_name, p.product_price,
+      coalesce((select q1.size::text from public.quantities q1 where q1.product_id = p.product_id and q1.product_stock > 0 and (q1.size = any(v_sizes) or q1.size = 'free_size') order by case q1.size when 'xs' then 1 when 's' then 2 when 'm' then 3 when 'l' then 4 when 'xl' then 5 when 'xxl' then 6 when 'free_size' then 7 end limit 1), 'out_of_stock') as recommended_size,
+      coalesce(array_agg(distinct s.style_name) filter (where s.style_name is not null), '{}'::text[]) as matched_styles,
       (
-        (
-          case
-            when v_style_id is not null and exists (
-              select 1
-              from public.product_styles ps2
-              where ps2.product_id = p.product_id
-                and ps2.style_id = v_style_id
-            ) then 0.50
-            else 0
-          end
-        )
-        +
-        (
-          case
-            when exists (
-              select 1
-              from public.quantities q2
-              where q2.product_id = p.product_id
-                and q2.product_stock > 0
-                and (q2.size = any(v_sizes) or q2.size = 'free_size')
-            ) then 0.30
-            else 0
-          end
-        )
-        +
-        coalesce(
-          (
-            select 0.20 * (
-              sum(q3.product_sold)::numeric /
-              nullif(sum(q3.product_sold + q3.product_stock), 0)
-            )
-            from public.quantities q3
-            where q3.product_id = p.product_id
-          ),
-          0
-        )
-      )::numeric(6,4) as score
+        -- 50% Weight: Style Match
+        (case when v_style_id is not null and exists (select 1 from public.product_styles ps2 where ps2.product_id = p.product_id and ps2.style_id = v_style_id) then 0.50 else 0 end) +
+        -- 30% Weight: Stock Availability in Predicted Size
+        (case when exists (select 1 from public.quantities q2 where q2.product_id = p.product_id and q2.product_stock > 0 and (q2.size = any(v_sizes) or q2.size = 'free_size')) then 0.30 else 0 end) +
+        -- 20% Weight: Historical Popularity / Sales
+        coalesce((select 0.20 * (sum(q3.product_sold)::numeric / nullif(sum(q3.product_sold + q3.product_stock), 0)) from public.quantities q3 where q3.product_id = p.product_id), 0)
+      )::numeric(6,4) as calculated_score
     from public.products p
     join public.categories c on c.category_id = p.category_id
     left join public.product_styles ps on ps.product_id = p.product_id
     left join public.styles s on s.style_id = ps.style_id
     where p.product_status = 'active'
-      and (v_gender is null or p.product_gender in (v_gender, 'unisex'))
-      and (
-        v_style_id is null
-        or exists (
-          select 1
-          from public.product_styles psx
-          where psx.product_id = p.product_id
-            and psx.style_id = v_style_id
-        )
-      )
-    group by
-      c.category_name, p.product_id, p.product_name, p.product_price
-  ),
-  ranked as (
-    select
-      *,
-      row_number() over (
-        partition by category_name
-        order by score desc, product_price asc, product_name asc
-      ) as rn
-    from scored
-    where score > 0
+    group by p.product_id, c.category_name, p.product_name, p.product_price
   )
-  select
-    category_name,
-    product_id,
-    product_name,
-    product_price,
-    recommended_size,
-    matched_styles,
-    score
-  from ranked
-  where rn = 1
-    and category_name in ('Top', 'Bottom', 'Outerwear', 'Dress', 'Accessories')
-  order by case category_name
-    when 'Top' then 1
-    when 'Bottom' then 2
-    when 'Outerwear' then 3
-    when 'Dress' then 4
-    when 'Accessories' then 5
-    else 99
-  end;
+  select * from scored
+  where calculated_score > 0
+  order by calculated_score desc
+  limit 10;
+
+  -- STEP 6: Store the recommendation session in the ai_recommendations table
+  select jsonb_agg(row_to_json(t)) into v_recommendations_json from temp_recs t;
+
+  if v_recommendations_json is not null then
+    insert into public.ai_recommendations (user_id, height_cm, weight_kg, requested_style_id, recommended_products)
+    values (auth.uid(), v_height, v_weight, v_style_id, v_recommendations_json);
+  end if;
+
+  -- STEP 7: Return the recommended product list to Flutter
+  return query select * from temp_recs order by score desc;
 end;
 $$;
 
