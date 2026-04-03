@@ -230,284 +230,80 @@ create table if not exists public.ai_recommendations (
 
 
 -- =====================================================
--- 3. FUNCTIONS AND TRIGGERS
+-- 3. INDEXES
 -- =====================================================
+create index if not exists idx_users_preferred_style_id on public.users(preferred_style_id);
+create index if not exists idx_users_email on public.users(user_email);
+create index if not exists idx_users_status on public.users(status);
+create index if not exists idx_products_category_id on public.products(category_id);
+create index if not exists idx_products_status on public.products(product_status);
+create index if not exists idx_product_styles_style_id on public.product_styles(style_id);
+create index if not exists idx_product_styles_product_id on public.product_styles(product_id);
+create index if not exists idx_quantities_product_id on public.quantities(product_id);
+create index if not exists idx_wishlists_user_id on public.wishlists(user_id);
+create index if not exists idx_cart_user_id on public.cart(user_id);
+create index if not exists idx_addresses_user_id on public.addresses(user_id);
+create index if not exists idx_orders_user_id on public.orders(user_id);
+create index if not exists idx_order_details_order_id on public.order_details(order_id);
+create index if not exists idx_payments_user_id on public.payments(user_id);
+create index if not exists idx_ai_recommendations_user_id on public.ai_recommendations(user_id);
+create index if not exists idx_deliveries_address_id on public.deliveries(address_id);
 
--- Create indexes for better query performance
-CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(user_email);
-CREATE INDEX IF NOT EXISTS idx_users_status ON public.users(status);
-CREATE INDEX IF NOT EXISTS idx_products_status ON public.products(product_status);
-CREATE INDEX IF NOT EXISTS idx_quantities_product ON public.quantities(product_id);
-CREATE INDEX IF NOT EXISTS idx_cart_user ON public.cart(user_id);
-CREATE INDEX IF NOT EXISTS idx_orders_user ON public.orders(user_id);
-CREATE INDEX IF NOT EXISTS idx_addresses_user ON public.addresses(user_id);
-CREATE INDEX IF NOT EXISTS idx_order_details_order ON public.order_details(order_id);
-CREATE INDEX IF NOT EXISTS idx_wishlists_user ON public.wishlists(user_id);
-CREATE INDEX IF NOT EXISTS idx_product_styles_product ON public.product_styles(product_id);
-CREATE INDEX IF NOT EXISTS idx_product_styles_style ON public.product_styles(style_id);
-CREATE INDEX IF NOT EXISTS idx_deliveries_address ON public.deliveries(address_id);
 
--- Create unique index for addresses (one default per user)
-CREATE UNIQUE INDEX IF NOT EXISTS uq_addresses_one_default
-ON public.addresses(user_id)
-WHERE is_default = true;
-
--- Create function to automatically create user profile when auth user signs up
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER SET search_path = public
-AS $$
-BEGIN
-  INSERT INTO public.users (
-    user_id,
-    user_email,
-    user_name,
-    status,
-    role,
-    created_at,
-    updated_at
-  ) VALUES (
-    new.id,
-    new.email,
-    COALESCE(new.raw_user_meta_data->>'full_name', 'User'),
-    'active',
-    'customer',
-    now(),
-    now()
-  )
-  ON CONFLICT (user_id) DO NOTHING;
-  
-  RETURN new;
-END;
+-- =====================================================
+-- 4. HELPER FUNCTIONS + TRIGGERS
+-- =====================================================
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
 $$;
 
--- Create trigger for automatic user profile creation
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+drop trigger if exists trg_users_updated_at on public.users;
+create trigger trg_users_updated_at
+before update on public.users
+for each row
+execute function public.set_updated_at();
 
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW
-  EXECUTE FUNCTION public.handle_new_user();
+drop trigger if exists trg_products_updated_at on public.products;
+create trigger trg_products_updated_at
+before update on public.products
+for each row
+execute function public.set_updated_at();
 
-
--- =====================================================
--- 4. ROW LEVEL SECURITY (RLS) POLICIES
--- =====================================================
-
--- ===== USERS TABLE =====
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-
--- Policy: Admins can view all users
-CREATE POLICY "admins view all users" ON public.users
-  FOR SELECT
-  USING (auth.jwt() ->> 'role' = 'admin');
-
--- Policy: Authenticated users can view their own profile
-CREATE POLICY "users view own profile" ON public.users
-  FOR SELECT
-  USING (auth.uid() = user_id);
-
--- Policy: Enable insert for authenticated users creating their own profile
-CREATE POLICY "users insert own profile" ON public.users
-  FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
-
--- Policy: Enable update for users to modify their own profile
-CREATE POLICY "users update own profile" ON public.users
-  FOR UPDATE
-  USING (auth.uid() = user_id);
-
-
--- ===== ADDRESSES TABLE =====
-ALTER TABLE public.addresses ENABLE ROW LEVEL SECURITY;
-
--- Policy: Users can view their own addresses
-CREATE POLICY "users view own addresses" ON public.addresses
-  FOR SELECT
-  USING (auth.uid() = user_id);
-
--- Policy: Users can insert their own addresses
-CREATE POLICY "users insert own addresses" ON public.addresses
-  FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
-
--- Policy: Users can update their own addresses
-CREATE POLICY "users update own addresses" ON public.addresses
-  FOR UPDATE
-  USING (auth.uid() = user_id);
-
--- Policy: Users can delete their own addresses
-CREATE POLICY "users delete own addresses" ON public.addresses
-  FOR DELETE
-  USING (auth.uid() = user_id);
-
-
--- ===== CART TABLE =====
-ALTER TABLE public.cart ENABLE ROW LEVEL SECURITY;
-
--- Policy: Users can view their own cart
-CREATE POLICY "users view own cart" ON public.cart
-  FOR SELECT
-  USING (auth.uid() = user_id);
-
--- Policy: Users can insert items to their cart
-CREATE POLICY "users insert own cart items" ON public.cart
-  FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
-
--- Policy: Users can update their cart items
-CREATE POLICY "users update own cart items" ON public.cart
-  FOR UPDATE
-  USING (auth.uid() = user_id);
-
--- Policy: Users can delete from their cart
-CREATE POLICY "users delete own cart items" ON public.cart
-  FOR DELETE
-  USING (auth.uid() = user_id);
-
-
--- ===== ORDERS TABLE =====
-ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
-
--- Policy: Users can view their own orders
-CREATE POLICY "users view own orders" ON public.orders
-  FOR SELECT
-  USING (auth.uid() = user_id);
-
--- Policy: Users can insert their own orders
-CREATE POLICY "users insert own orders" ON public.orders
-  FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
-
--- Policy: Users can update their own orders
-CREATE POLICY "users update own orders" ON public.orders
-  FOR UPDATE
-  USING (auth.uid() = user_id);
-
-
--- ===== ORDER_DETAILS TABLE =====
-ALTER TABLE public.order_details ENABLE ROW LEVEL SECURITY;
-
--- Policy: Users can view their order details
-CREATE POLICY "users view own order details" ON public.order_details
-  FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.orders
-      WHERE orders.order_id = order_details.order_id
-      AND orders.user_id = auth.uid()
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.users (user_id, user_email, user_name)
+  values (
+    new.id,
+    new.email,
+    coalesce(
+      nullif(new.raw_user_meta_data ->> 'full_name', ''),
+      nullif(new.raw_user_meta_data ->> 'name', ''),
+      split_part(new.email, '@', 1),
+      'User'
     )
-  );
+  )
+  on conflict (user_id) do nothing;
 
+  return new;
+end;
+$$;
 
--- ===== WISHLISTS TABLE =====
-ALTER TABLE public.wishlists ENABLE ROW LEVEL SECURITY;
-
--- Policy: Users can view their own wishlist
-CREATE POLICY "users view own wishlist" ON public.wishlists
-  FOR SELECT
-  USING (auth.uid() = user_id);
-
--- Policy: Users can add to their wishlist
-CREATE POLICY "users insert own wishlist" ON public.wishlists
-  FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
-
--- Policy: Users can delete from their wishlist
-CREATE POLICY "users delete own wishlist" ON public.wishlists
-  FOR DELETE
-  USING (auth.uid() = user_id);
-
-
--- ===== DELIVERIES TABLE =====
-ALTER TABLE public.deliveries ENABLE ROW LEVEL SECURITY;
-
--- Policy: Users can view deliveries for their orders
-CREATE POLICY "users view own deliveries" ON public.deliveries
-  FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.orders
-      WHERE orders.delivery_id = deliveries.delivery_id
-      AND orders.user_id = auth.uid()
-    )
-  );
-
-
--- ===== PRODUCTS TABLE =====
-ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
-
--- Policy: Anyone can view active products
-CREATE POLICY "anyone can view products" ON public.products
-  FOR SELECT
-  USING (product_status = 'active');
-
-
--- ===== QUANTITIES TABLE =====
-ALTER TABLE public.quantities ENABLE ROW LEVEL SECURITY;
-
--- Policy: Anyone can view quantities for active products
-CREATE POLICY "anyone can view quantities" ON public.quantities
-  FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.products
-      WHERE products.product_id = quantities.product_id
-      AND products.product_status = 'active'
-    )
-  );
-
-
--- ===== PRODUCT_STYLES TABLE =====
-ALTER TABLE public.product_styles ENABLE ROW LEVEL SECURITY;
-
--- Policy: Anyone can view product styles
-CREATE POLICY "anyone can view product styles" ON public.product_styles
-  FOR SELECT
-  USING (true);
-
-
--- ===== STYLES TABLE =====
-ALTER TABLE public.styles ENABLE ROW LEVEL SECURITY;
-
--- Policy: Anyone can view styles
-CREATE POLICY "anyone can view styles" ON public.styles
-  FOR SELECT
-  USING (true);
-
-
--- ===== CATEGORIES TABLE =====
-ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
-
--- Policy: Anyone can view categories
-CREATE POLICY "anyone can view categories" ON public.categories
-  FOR SELECT
-  USING (true);
-
-
--- ===== PAYMENT_METHODS TABLE =====
-ALTER TABLE public.payment_methods ENABLE ROW LEVEL SECURITY;
-
--- Policy: Users can view their own payment methods
-CREATE POLICY "users view own payment methods" ON public.payment_methods
-  FOR SELECT
-  USING (auth.uid() = user_id);
-
--- Policy: Users can insert their own payment methods
-CREATE POLICY "users insert own payment methods" ON public.payment_methods
-  FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
-
--- Policy: Users can update their own payment methods
-CREATE POLICY "users update own payment methods" ON public.payment_methods
-  FOR UPDATE
-  USING (auth.uid() = user_id);
-
--- Policy: Users can delete their own payment methods
-CREATE POLICY "users delete own payment methods" ON public.payment_methods
-  FOR DELETE
-  USING (auth.uid() = user_id);
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row
+execute function public.handle_new_user();
 
 
 -- =====================================================
@@ -539,36 +335,21 @@ select
     '{}'::text[]
   ) as available_sizes
 from public.products p
-join public.categories c
-  on c.category_id = p.category_id
-left join public.product_styles ps
-  on ps.product_id = p.product_id
-left join public.styles s
-  on s.style_id = ps.style_id
-left join public.quantities q
-  on q.product_id = p.product_id
+join public.categories c on c.category_id = p.category_id
+left join public.product_styles ps on ps.product_id = p.product_id
+left join public.styles s on s.style_id = ps.style_id
+left join public.quantities q on q.product_id = p.product_id
 group by
-  p.product_id,
-  c.category_name,
-  p.product_name,
-  p.product_description,
-  p.product_gender,
-  p.product_type,
-  p.fit_type,
-  p.color,
-  p.material,
-  p.product_price,
-  p.product_status,
-  p.product_pic1,
-  p.product_pic2,
-  p.product_pic3,
-  p.product_pic4;
+  p.product_id, c.category_name, p.product_name, p.product_description,
+  p.product_gender, p.product_type, p.fit_type, p.color, p.material,
+  p.product_price, p.product_status, p.product_pic1, p.product_pic2,
+  p.product_pic3, p.product_pic4;
 
 grant select on public.v_product_catalogue to anon, authenticated;
 
 
 -- =====================================================
--- 6. AI FUNCTIONS
+-- 6. AI RECOMMENDATION FUNCTION
 -- =====================================================
 create or replace function public.recommend_outfit_set(
   p_height_cm numeric default null,
@@ -625,8 +406,7 @@ begin
       (
         select s2.style_name
         from public.users u2
-        left join public.styles s2
-          on s2.style_id = u2.preferred_style_id
+        left join public.styles s2 on s2.style_id = u2.preferred_style_id
         where u2.user_id = auth.uid()
       )
     )
@@ -715,12 +495,9 @@ begin
         )
       )::numeric(6,4) as score
     from public.products p
-    join public.categories c
-      on c.category_id = p.category_id
-    left join public.product_styles ps
-      on ps.product_id = p.product_id
-    left join public.styles s
-      on s.style_id = ps.style_id
+    join public.categories c on c.category_id = p.category_id
+    left join public.product_styles ps on ps.product_id = p.product_id
+    left join public.styles s on s.style_id = ps.style_id
     where p.product_status = 'active'
       and (v_gender is null or p.product_gender in (v_gender, 'unisex'))
       and (
@@ -733,10 +510,7 @@ begin
         )
       )
     group by
-      c.category_name,
-      p.product_id,
-      p.product_name,
-      p.product_price
+      c.category_name, p.product_id, p.product_name, p.product_price
   ),
   ranked as (
     select
@@ -841,232 +615,82 @@ alter table public.ai_recommendations enable row level security;
 -- =====================================================
 -- 8. POLICIES
 -- =====================================================
-drop policy if exists "styles readable by everyone" on public.styles;
-create policy "styles readable by everyone"
-on public.styles for select
-to anon, authenticated
-using (true);
 
-drop policy if exists "admins manage styles" on public.styles;
-create policy "admins manage styles"
-on public.styles for all
-to authenticated
-using (public.is_admin())
-with check (public.is_admin());
+-- STYLES
+drop policy if exists "styles_readable" on public.styles;
+create policy "styles_readable" on public.styles for select to anon, authenticated using (true);
 
-drop policy if exists "categories readable by everyone" on public.categories;
-create policy "categories readable by everyone"
-on public.categories for select
-to anon, authenticated
-using (true);
+-- CATEGORIES
+drop policy if exists "categories_readable" on public.categories;
+create policy "categories_readable" on public.categories for select to anon, authenticated using (true);
 
-drop policy if exists "admins manage categories" on public.categories;
-create policy "admins manage categories"
-on public.categories for all
-to authenticated
-using (public.is_admin())
-with check (public.is_admin());
+-- USERS
+drop policy if exists "users_view_own" on public.users;
+create policy "users_view_own" on public.users for select to authenticated using (auth.uid() = user_id);
 
-drop policy if exists "users view own profile" on public.users;
-create policy "users view own profile"
-on public.users for select
-to authenticated
-using (auth.uid() = user_id);
+drop policy if exists "users_insert_own" on public.users;
+create policy "users_insert_own" on public.users for insert to authenticated with check (auth.uid() = user_id);
 
-drop policy if exists "users insert own profile" on public.users;
-create policy "users insert own profile"
-on public.users for insert
-to authenticated
-with check (auth.uid() = user_id);
+drop policy if exists "users_update_own" on public.users;
+create policy "users_update_own" on public.users for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
-drop policy if exists "users update own profile" on public.users;
-create policy "users update own profile"
-on public.users for update
-to authenticated
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+-- PRODUCTS
+drop policy if exists "products_readable" on public.products;
+create policy "products_readable" on public.products for select to anon, authenticated using (product_status = 'active');
 
-drop policy if exists "admins view all users" on public.users;
-create policy "admins view all users"
-on public.users for select
-to authenticated
-using (public.is_admin());
+-- PRODUCT_STYLES
+drop policy if exists "product_styles_readable" on public.product_styles;
+create policy "product_styles_readable" on public.product_styles for select to anon, authenticated using (true);
 
-drop policy if exists "products readable by everyone" on public.products;
-create policy "products readable by everyone"
-on public.products for select
-to anon, authenticated
-using (product_status = 'active' or public.is_admin());
+-- QUANTITIES
+drop policy if exists "quantities_readable" on public.quantities;
+create policy "quantities_readable" on public.quantities for select to anon, authenticated using (true);
 
-drop policy if exists "admins manage products" on public.products;
-create policy "admins manage products"
-on public.products for all
-to authenticated
-using (public.is_admin())
-with check (public.is_admin());
+-- WISHLISTS
+drop policy if exists "wishlists_manage" on public.wishlists;
+create policy "wishlists_manage" on public.wishlists for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
-drop policy if exists "product styles readable by everyone" on public.product_styles;
-create policy "product styles readable by everyone"
-on public.product_styles for select
-to anon, authenticated
-using (true);
+-- CART
+drop policy if exists "cart_manage" on public.cart;
+create policy "cart_manage" on public.cart for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
-drop policy if exists "admins manage product styles" on public.product_styles;
-create policy "admins manage product styles"
-on public.product_styles for all
-to authenticated
-using (public.is_admin())
-with check (public.is_admin());
+-- ADDRESSES
+drop policy if exists "addresses_manage" on public.addresses;
+create policy "addresses_manage" on public.addresses for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
-drop policy if exists "quantities readable by everyone" on public.quantities;
-create policy "quantities readable by everyone"
-on public.quantities for select
-to anon, authenticated
-using (true);
-
-drop policy if exists "admins manage quantities" on public.quantities;
-create policy "admins manage quantities"
-on public.quantities for all
-to authenticated
-using (public.is_admin())
-with check (public.is_admin());
-
-drop policy if exists "users manage own wishlist" on public.wishlists;
-create policy "users manage own wishlist"
-on public.wishlists for all
-to authenticated
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
-
-drop policy if exists "users manage own cart" on public.cart;
-create policy "users manage own cart"
-on public.cart for all
-to authenticated
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
-
-drop policy if exists "users manage own addresses" on public.addresses;
-create policy "users manage own addresses"
-on public.addresses for all
-to authenticated
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
-
-drop policy if exists "users view own deliveries" on public.deliveries;
-create policy "users view own deliveries"
-on public.deliveries for select
-to authenticated
-using (
-  public.is_admin()
-  or exists (
-    select 1
-    from public.orders o
-    where o.delivery_id = deliveries.delivery_id
-      and o.user_id = auth.uid()
-  )
+-- DELIVERIES
+drop policy if exists "deliveries_view" on public.deliveries;
+create policy "deliveries_view" on public.deliveries for select to authenticated using (
+  exists (select 1 from public.orders o where o.delivery_id = deliveries.delivery_id and o.user_id = auth.uid())
 );
 
-drop policy if exists "users create deliveries from own address" on public.deliveries;
-create policy "users create deliveries from own address"
-on public.deliveries for insert
-to authenticated
-with check (
-  public.is_admin()
-  or exists (
-    select 1
-    from public.addresses a
-    where a.address_id = deliveries.address_id
-      and a.user_id = auth.uid()
-  )
+-- ORDERS
+drop policy if exists "orders_view" on public.orders;
+create policy "orders_view" on public.orders for select to authenticated using (auth.uid() = user_id);
+
+drop policy if exists "orders_insert" on public.orders;
+create policy "orders_insert" on public.orders for insert to authenticated with check (auth.uid() = user_id);
+
+-- ORDER_DETAILS
+drop policy if exists "order_details_view" on public.order_details;
+create policy "order_details_view" on public.order_details for select to authenticated using (
+  exists (select 1 from public.orders o where o.order_id = order_details.order_id and o.user_id = auth.uid())
 );
 
-drop policy if exists "admins update deliveries" on public.deliveries;
-create policy "admins update deliveries"
-on public.deliveries for update
-to authenticated
-using (public.is_admin())
-with check (public.is_admin());
+-- PAYMENT_METHODS
+drop policy if exists "payment_methods_manage" on public.payment_methods;
+create policy "payment_methods_manage" on public.payment_methods for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
-drop policy if exists "users view own orders or admin view all" on public.orders;
-create policy "users view own orders or admin view all"
-on public.orders for select
-to authenticated
-using (auth.uid() = user_id or public.is_admin());
+-- PAYMENTS
+drop policy if exists "payments_view" on public.payments;
+create policy "payments_view" on public.payments for select to authenticated using (auth.uid() = user_id);
 
-drop policy if exists "users create own orders" on public.orders;
-create policy "users create own orders"
-on public.orders for insert
-to authenticated
-with check (auth.uid() = user_id or public.is_admin());
+drop policy if exists "payments_insert" on public.payments;
+create policy "payments_insert" on public.payments for insert to authenticated with check (auth.uid() = user_id);
 
-drop policy if exists "admins update orders" on public.orders;
-create policy "admins update orders"
-on public.orders for update
-to authenticated
-using (public.is_admin())
-with check (public.is_admin());
-
-drop policy if exists "users view own order details or admin" on public.order_details;
-create policy "users view own order details or admin"
-on public.order_details for select
-to authenticated
-using (
-  public.is_admin()
-  or exists (
-    select 1
-    from public.orders o
-    where o.order_id = order_details.order_id
-      and o.user_id = auth.uid()
-  )
-);
-
-drop policy if exists "users create own order details or admin" on public.order_details;
-create policy "users create own order details or admin"
-on public.order_details for insert
-to authenticated
-with check (
-  public.is_admin()
-  or exists (
-    select 1
-    from public.orders o
-    where o.order_id = order_details.order_id
-      and o.user_id = auth.uid()
-  )
-);
-
-drop policy if exists "users manage own payment methods" on public.payment_methods;
-create policy "users manage own payment methods"
-on public.payment_methods for all
-to authenticated
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
-
-drop policy if exists "users view own payments or admin" on public.payments;
-create policy "users view own payments or admin"
-on public.payments for select
-to authenticated
-using (auth.uid() = user_id or public.is_admin());
-
-drop policy if exists "users create own payments or admin" on public.payments;
-create policy "users create own payments or admin"
-on public.payments for insert
-to authenticated
-with check (auth.uid() = user_id or public.is_admin());
-
-drop policy if exists "admins update payments" on public.payments;
-create policy "admins update payments"
-on public.payments for update
-to authenticated
-using (public.is_admin())
-with check (public.is_admin());
-
-drop policy if exists "users manage own ai recommendations" on public.ai_recommendations;
-create policy "users manage own ai recommendations"
-on public.ai_recommendations for all
-to authenticated
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
-
+-- AI_RECOMMENDATIONS
+drop policy if exists "ai_recommendations_manage" on public.ai_recommendations;
+create policy "ai_recommendations_manage" on public.ai_recommendations for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- =====================================================
 -- 9. SEED DATA
@@ -1193,12 +817,12 @@ from (
   values
   ('Top','Korean Oversize Shirt','Loose Korean style shirt for daily wear.','unisex','shirt','oversized','White','Cotton',69.90,'oversize_shirt_K1.png','oversize_shirt_K2.png','oversize_shirt_K3.png','oversize_shirt_K4.png'),
   ('Top','White Office Shirt','Clean office shirt for formal look.','unisex','shirt','regular','White','Cotton',65.90,'white_office_shirt_1.png','white_office_shirt_2.png','white_office_shirt_3.png','white_office_shirt_4.png'),
-  ('Top','Blue Stripe Shirt','Blue stripe shirt for smart casual style.','men','shirt','regular','Blue','Cotton',67.90,'blue_stripe_shirt_1.png','blue_stripe_shirt_2.png','blue_stripe_shirt_3.png',''),
-  ('Top','Satin Formal Shirt','Soft satin formal shirt for elegant look.','women','shirt','slim','Cream','Satin',72.90,'satin_formal_shirt_1.png','satin_formal_shirt_2.png','satin_formal_shirt_3.png',''),
+  ('Top','Blue Stripe Shirt','Blue stripe shirt for smart casual style.','men','shirt','regular','Blue','Cotton',67.90,'blue_stripe_shirt_1.png','blue_stripe_shirt_2.png','blue_stripe_shirt_3.png','blue_stripe_shirt_4.png'),
+  ('Top','Satin Formal Shirt','Soft satin formal shirt for elegant look.','women','shirt','slim','Cream','Satin',72.90,'satin_formal_shirt_1.png','satin_formal_shirt_2.png','satin_formal_shirt_3.png','satin_formal_shirt_4.png'),
 
   ('Top','Korean Crop Tee','Simple crop tee with 4 image set.','women','tshirt','slim','Black','Cotton',42.90,'crop_tee_K1.png','crop_tee_K2.png','crop_tee_K3.png','crop_tee_K4.png'),
   ('Top','Ghost Graphic Tee','Black graphic tee with cute ghost print.','unisex','tshirt','regular','Black','Cotton',45.90,'ghost_graphic_tee_1.png','ghost_graphic_tee_2.png','ghost_graphic_tee_3.png','ghost_graphic_tee_4.png'),
-  ('Top','Basic Black Drawstring Tee','Black drawstring tee for casual outfit.','women','tshirt','slim','Black','Cotton',41.90,'drawstring_tee_1.png','drawstring_tee_2.png','drawstring_tee_3.png',''),
+  ('Top','Basic Black Drawstring Tee','Black drawstring tee for casual outfit.','women','tshirt','slim','Black','Cotton',41.90,'drawstring_tee_1.png','drawstring_tee_2.png','drawstring_tee_3.png','drawstring_tee_4.png'),
   ('Top','Sky Blue Off Shoulder Tee','Soft blue off shoulder tee for cute look.','women','tshirt','relaxed','Blue','Cotton',46.90,'off_shoulder_tee_1.png','off_shoulder_tee_2.png','off_shoulder_tee_3.png','off_shoulder_tee_4.png'),
 
   ('Top','Ribbon Blouse','Ribbon blouse with feminine style.','women','blouse','regular','Pink','Chiffon',59.90,'ribbon_blouse_1.png','ribbon_blouse_2.png','ribbon_blouse_3.png','ribbon_blouse_4.png'),
