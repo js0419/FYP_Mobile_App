@@ -269,12 +269,7 @@ before update on public.users
 for each row
 execute function public.set_updated_at();
 
-drop trigger if exists trg_products_updated_at on public.products;
-create trigger trg_products_updated_at
-before update on public.products
-for each row
-execute function public.set_updated_at();
-
+-- UPDATED: Now properly handles user_phone on registration and updates conflicts
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -456,53 +451,6 @@ begin
   return query select * from temp_recs order by score desc;
 end;
 $$;
-
-grant execute on function public.recommend_outfit_set(numeric, numeric, text, product_gender_enum)
-to authenticated;
-
-create or replace function public.save_ai_recommendation_log(
-  p_height_cm numeric,
-  p_weight_kg numeric,
-  p_style_name text,
-  p_product_ids uuid[]
-)
-returns bigint
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_style_id uuid;
-  v_rec_id bigint;
-begin
-  select style_id
-  into v_style_id
-  from public.styles
-  where lower(style_name) = lower(p_style_name)
-  limit 1;
-
-  insert into public.ai_recommendations (
-    user_id,
-    height_cm,
-    weight_kg,
-    requested_style_id,
-    recommended_products
-  )
-  values (
-    auth.uid(),
-    p_height_cm,
-    p_weight_kg,
-    v_style_id,
-    to_jsonb(coalesce(p_product_ids, array[]::uuid[]))
-  )
-  returning recommendation_id into v_rec_id;
-
-  return v_rec_id;
-end;
-$$;
-
-grant execute on function public.save_ai_recommendation_log(numeric, numeric, text, uuid[])
-to authenticated;
 
 
 -- =====================================================
