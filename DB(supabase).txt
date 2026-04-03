@@ -349,6 +349,7 @@ grant select on public.v_product_catalogue to anon, authenticated;
 -- =====================================================
 -- 6. AI RECOMMENDATION FUNCTION (Content-Based Expert System)
 -- =====================================================
+-- UPDATED: Now properly handles JSON generation and Step 6 database logging
 create or replace function public.recommend_outfit_set(
   p_height_cm numeric default null,
   p_weight_kg numeric default null,
