@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'dart:typed_data';
 
 class ProfileService {
   final SupabaseClient _supabase = Supabase.instance.client;
@@ -24,7 +25,7 @@ class ProfileService {
   // Upload profile picture to storage and get public URL
   Future<String> uploadProfilePicture({
     required String userId,
-    required File imageFile,
+    required Uint8List imageBytes, // Changed from File to Uint8List
   }) async {
     try {
       final fileName = 'profile_$userId.jpg';
@@ -32,19 +33,19 @@ class ProfileService {
 
       // Delete old picture if exists
       try {
-        await _supabase.storage
-            .from(_profilePicsBucket)
-            .remove(['profile_pictures/$userId/$fileName']);
+        await _supabase.storage.from(_profilePicsBucket).remove([
+          'profile_pictures/$userId/$fileName',
+        ]);
       } catch (e) {
         print('No previous file to delete: $e');
       }
 
-      // Upload new picture
+      // Upload new picture using uploadBinary (works on Web & Mobile)
       await _supabase.storage
           .from(_profilePicsBucket)
-          .upload(
+          .uploadBinary(
             filePath,
-            imageFile,
+            imageBytes,
             fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
           );
 
@@ -67,9 +68,12 @@ class ProfileService {
     required String phoneNumber,
     String? gender,
     String? profilePicUrl,
+    double? height,
+    double? weight,
+    String? preferredStyleId,
   }) async {
     try {
-      final updateData = {
+      final updateData = <String, dynamic>{
         'user_name': '$firstName $lastName',
         'user_phone': phoneNumber,
         'updated_at': DateTime.now().toIso8601String(),
@@ -81,6 +85,9 @@ class ProfileService {
       if (profilePicUrl != null && profilePicUrl.isNotEmpty) {
         updateData['user_profile_pic'] = profilePicUrl;
       }
+      if (height != null) updateData['height_cm'] = height;
+      if (weight != null) updateData['weight_kg'] = weight;
+      if (preferredStyleId != null) updateData['preferred_style_id'] = preferredStyleId;
 
       await _supabase.from('users').update(updateData).eq('user_id', userId);
     } catch (e) {
@@ -88,12 +95,36 @@ class ProfileService {
     }
   }
 
+  // Fetch all available styles for the dropdown
+  Future<List<Map<String, dynamic>>> getStyles() async {
+    try {
+      final response = await _supabase
+          .from('styles')
+          .select()
+          .order('style_name');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      throw Exception('Failed to fetch styles: $e');
+    }
+  }
+
+  // CALL THE AI RECOMMENDATION FUNCTION
+  Future<List<Map<String, dynamic>>> getAiRecommendations() async {
+    try {
+      // This calls the recommend_outfit_set function in your Supabase DB
+      final response = await _supabase.rpc('recommend_outfit_set');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      throw Exception('Failed to get AI recommendations: $e');
+    }
+  }
+
   // Delete profile picture
   Future<void> deleteProfilePicture(String userId) async {
     try {
-      await _supabase.storage
-          .from(_profilePicsBucket)
-          .remove(['profile_pictures/$userId/profile_$userId.jpg']);
+      await _supabase.storage.from(_profilePicsBucket).remove([
+        'profile_pictures/$userId/profile_$userId.jpg',
+      ]);
     } catch (e) {
       throw Exception('Failed to delete profile picture: $e');
     }
@@ -105,7 +136,8 @@ class ProfileService {
       return '';
     }
 
-    if (picturePath.startsWith('http://') || picturePath.startsWith('https://')) {
+    if (picturePath.startsWith('http://') ||
+        picturePath.startsWith('https://')) {
       return picturePath;
     }
 
@@ -115,12 +147,10 @@ class ProfileService {
   }
 
   // ... rest of the existing methods (addresses, orders, etc.)
-  
+
   Future<void> updatePassword(String newPassword) async {
     try {
-      await _supabase.auth.updateUser(
-        UserAttributes(password: newPassword),
-      );
+      await _supabase.auth.updateUser(UserAttributes(password: newPassword));
     } on AuthException catch (e) {
       throw Exception(e.message);
     } catch (e) {
@@ -198,16 +228,19 @@ class ProfileService {
             .eq('user_id', userId);
       }
 
-      await _supabase.from('addresses').update({
-        'recipient_name': fullName,
-        'phone': phoneNumber,
-        'address_line1': street,
-        'city': city,
-        'state': state,
-        'post_code': postalCode,
-        'country': country,
-        'is_default': isDefault,
-      }).eq('address_id', addressId);
+      await _supabase
+          .from('addresses')
+          .update({
+            'recipient_name': fullName,
+            'phone': phoneNumber,
+            'address_line1': street,
+            'city': city,
+            'state': state,
+            'post_code': postalCode,
+            'country': country,
+            'is_default': isDefault,
+          })
+          .eq('address_id', addressId);
     } catch (e) {
       throw Exception('Failed to update address: $e');
     }
@@ -226,7 +259,8 @@ class ProfileService {
       final response = await _supabase
           .from('orders')
           .select(
-              'order_id, order_date, order_subtotal, orders_status, delivery_id, created_at')
+            'order_id, order_date, order_subtotal, orders_status, delivery_id, created_at',
+          )
           .eq('user_id', userId)
           .order('created_at', ascending: false);
 
@@ -241,7 +275,8 @@ class ProfileService {
       final response = await _supabase
           .from('order_details')
           .select(
-              'order_detail_id, quantity_id, quantity, unit_price, product_id, products(product_id, product_name, product_price), quantities(size)')
+            'order_detail_id, quantity_id, quantity, unit_price, product_id, products(product_id, product_name, product_price), quantities(size)',
+          )
           .eq('order_id', orderId);
 
       return List<Map<String, dynamic>>.from(response);

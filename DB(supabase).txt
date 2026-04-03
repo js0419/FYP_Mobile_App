@@ -282,7 +282,7 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.users (user_id, user_email, user_name)
+  insert into public.users (user_id, user_email, user_name, user_phone)
   values (
     new.id,
     new.email,
@@ -291,9 +291,12 @@ begin
       nullif(new.raw_user_meta_data ->> 'name', ''),
       split_part(new.email, '@', 1),
       'User'
-    )
+    ),
+    nullif(new.raw_user_meta_data ->> 'phone', '')
   )
-  on conflict (user_id) do nothing;
+  on conflict (user_id) do update set 
+    user_phone = excluded.user_phone,
+    user_name = excluded.user_name;
 
   return new;
 end;
@@ -691,6 +694,38 @@ create policy "payments_insert" on public.payments for insert to authenticated w
 -- AI_RECOMMENDATIONS
 drop policy if exists "ai_recommendations_manage" on public.ai_recommendations;
 create policy "ai_recommendations_manage" on public.ai_recommendations for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- 1. Create the bucket if it doesn't exist, and make sure it is set to public (so images can be viewed)
+insert into storage.buckets (id, name, public)
+values ('profile_pictures', 'profile_pictures', true)
+on conflict (id) do update set public = true;
+
+-- 2. Drop any policies you might have tried to make
+drop policy if exists "Public viewing" on storage.objects;
+drop policy if exists "Users can upload" on storage.objects;
+drop policy if exists "Users can update" on storage.objects;
+drop policy if exists "Users can delete" on storage.objects;
+
+-- 3. Create Policy: Allow anyone on the internet to VIEW the profile pictures
+create policy "Public viewing"
+on storage.objects for select
+using ( bucket_id = 'profile_pictures' );
+
+-- 4. Create Policy: Allow logged-in users to UPLOAD (insert) pictures
+create policy "Users can upload"
+on storage.objects for insert
+with check ( bucket_id = 'profile_pictures' and auth.role() = 'authenticated' );
+
+-- 5. Create Policy: Allow users to UPDATE their own pictures
+create policy "Users can update"
+on storage.objects for update
+using ( bucket_id = 'profile_pictures' and auth.uid() = owner );
+
+-- 6. Create Policy: Allow users to DELETE their own pictures
+create policy "Users can delete"
+on storage.objects for delete
+using ( bucket_id = 'profile_pictures' and auth.uid() = owner );
+
 
 -- =====================================================
 -- 9. SEED DATA
