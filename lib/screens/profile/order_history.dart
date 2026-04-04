@@ -463,7 +463,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                             ),
                           ),
                         );
-                      }).toList(),
+                      }),
                       const SizedBox(height: 12),
                       Container(
                         padding: const EdgeInsets.all(12),

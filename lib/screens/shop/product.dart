@@ -590,7 +590,7 @@ class _ProductsPageState extends State<ProductsPage> {
 
   Widget _buildGenderDropdown() {
     return DropdownButtonFormField<String>(
-      value: _selectedGender,
+      initialValue: _selectedGender,
       isExpanded: true,
       decoration: InputDecoration(
         labelText: 'Gender',
@@ -626,7 +626,7 @@ class _ProductsPageState extends State<ProductsPage> {
 
   Widget _buildTypeDropdown() {
     return DropdownButtonFormField<String>(
-      value: _selectedType,
+      initialValue: _selectedType,
       isExpanded: true,
       decoration: InputDecoration(
         labelText: 'Type',
@@ -662,7 +662,7 @@ class _ProductsPageState extends State<ProductsPage> {
 
   Widget _buildSortDropdown() {
     return DropdownButtonFormField<String>(
-      value: _selectedSort,
+      initialValue: _selectedSort,
       isExpanded: true,
       decoration: InputDecoration(
         labelText: 'Sort',

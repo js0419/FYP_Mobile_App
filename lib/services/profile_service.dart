@@ -1,6 +1,4 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 import 'dart:typed_data';
 
 class ProfileService {

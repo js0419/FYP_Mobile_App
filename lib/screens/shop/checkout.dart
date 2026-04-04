@@ -3,6 +3,7 @@ import 'package:flutter_paypal_payment/flutter_paypal_payment.dart';
 import '../../services/shop_service.dart';
 import '../../services/profile_service.dart';
 import 'receipt.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CheckoutScreen extends StatefulWidget {
   final List<Map<String, dynamic>> cartItems;
@@ -31,7 +32,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   Future<void> _loadAddresses() async {
     try {
-      final userId = _shopService._supabase.auth.currentUser?.id;
+      final userId = Supabase.instance.client.auth.currentUser?.id;
       if (userId != null) {
         final addresses = await _profileService.getUserAddresses(userId);
         setState(() {
@@ -131,7 +132,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               const Text('No address found. Please add one in profile.', style: TextStyle(color: Colors.red))
             else
               DropdownButtonFormField<String>(
-                value: _selectedAddressId,
+                initialValue: _selectedAddressId,
                 isExpanded: true,
                 items: _addresses.map((a) => DropdownMenuItem(
                   value: a['address_id'] as String,

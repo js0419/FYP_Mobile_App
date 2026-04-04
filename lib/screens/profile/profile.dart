@@ -246,14 +246,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                             .toString()
                                             .isNotEmpty
                                     ? Image.network(
-                                        profile!['user_profile_pic'],
+                                        profile['user_profile_pic'],
                                         fit: BoxFit.cover,
                                         errorBuilder:
                                             (context, error, stackTrace) {
                                           return Center(
                                             child: Text(
                                               _getProfileInitials(
-                                                  profile?['user_name'] ??
+                                                  profile['user_name'] ??
                                                       'User'),
                                               style: const TextStyle(
                                                 color: Colors.white,

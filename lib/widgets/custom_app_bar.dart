@@ -5,7 +5,7 @@ import '../screens/profile/profile.dart';
 import '../screens/auth/login.dart';
 
 class CustomAppBar extends StatefulWidget implements PreferredSizeWidget {
-  const CustomAppBar({Key? key}) : super(key: key);
+  const CustomAppBar({super.key});
 
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
@@ -79,7 +79,7 @@ class _CustomAppBarState extends State<CustomAppBar> {
               radius: 16,
               backgroundColor: Colors.black,
               child: Text(
-                '${user.email?[0].toUpperCase() ?? 'U'}',
+                user.email?[0].toUpperCase() ?? 'U',
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
