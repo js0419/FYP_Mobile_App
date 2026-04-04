@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../../widgets/custom_footer.dart';
+import '../../widgets/custom_drawer.dart';
 import 'product_details.dart';
 import 'product.dart';
 import '../../services/product_image_service.dart';
@@ -47,7 +48,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: const CustomAppBar(),
-      drawer: _buildDrawer(context),
+      drawer: const CustomDrawer(),
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -77,89 +78,6 @@ class _HomeScreenState extends State<HomeScreen> {
             const CustomFooter(),
           ],
         ),
-      ),
-    );
-  }
-
-  Future<void> _openNamedRoute(
-    BuildContext context,
-    String routeName,
-    String pageName,
-  ) async {
-    Navigator.pop(context);
-
-    try {
-      await Navigator.pushNamed(context, routeName);
-    } catch (_) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '$pageName route not found. Change the route name if your app uses a different one.',
-          ),
-          backgroundColor: Colors.black,
-        ),
-      );
-    }
-  }
-
-  Widget _buildDrawer(BuildContext context) {
-    return Drawer(
-      backgroundColor: Colors.white,
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          const DrawerHeader(
-            decoration: BoxDecoration(color: Colors.black),
-            child: Align(
-              alignment: Alignment.bottomLeft,
-              child: Text(
-                'MENU',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 2.0,
-                ),
-              ),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.storefront_outlined, color: Colors.black),
-            title: const Text('PRODUCT PAGE'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const ProductsPage()),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.info_outline, color: Colors.black),
-            title: const Text('ABOUT US PAGE'),
-            onTap: () => _openNamedRoute(context, '/about', 'About Us'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.help_outline, color: Colors.black),
-            title: const Text('FAQ PAGE'),
-            onTap: () => _openNamedRoute(context, '/faq', 'FAQ'),
-          ),
-          ListTile(
-            leading: const Icon(
-              Icons.shopping_bag_outlined,
-              color: Colors.black,
-            ),
-            title: const Text('CART PAGE'),
-            onTap: () => _openNamedRoute(context, '/cart', 'Cart'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.person_outline, color: Colors.black),
-            title: const Text('PROFILE PAGE'),
-            onTap: () => _openNamedRoute(context, '/profile', 'Profile'),
-          ),
-        ],
       ),
     );
   }

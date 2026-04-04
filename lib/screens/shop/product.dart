@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../widgets/custom_app_bar.dart';
+import '../../widgets/custom_drawer.dart';
 import 'product_details.dart';
 import '../../services/product_image_service.dart';
 

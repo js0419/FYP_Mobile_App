@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../screens/shop/home.dart';
+import '../screens/shop/cart.dart';
 import '../services/auth_service.dart';
 import '../screens/profile/profile.dart';
 import '../screens/auth/login.dart';
@@ -66,6 +67,12 @@ class _CustomAppBarState extends State<CustomAppBar> {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const LoginScreen()),
+              );
+            } else {
+              // ADDED NAVIGATION TO CART HERE
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const CartScreen()),
               );
             }
           },
