@@ -185,7 +185,8 @@ class _ProductDetailsPageState extends State<ProductDetailsPage> {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: const CustomAppBar(), // CHANGED TO USE CUSTOM APP BAR
+      appBar: const CustomAppBar(), 
+      drawer: const CustomDrawer(), 
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

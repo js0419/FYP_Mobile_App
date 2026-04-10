@@ -224,7 +224,7 @@ class _AddressScreenState extends State<AddressScreen> {
 }
 
 // ----------------------------------------------------
-// FULL ADDRESS FORM SCREEN (With Auto-Fill User Info)
+// FULL ADDRESS FORM SCREEN (With Postcode Validation)
 // ----------------------------------------------------
 class AddressFormScreen extends StatefulWidget {
   final Map<String, dynamic>? address;
@@ -242,9 +242,16 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
   final _phoneController = TextEditingController();
   final _streetController = TextEditingController();
   final _cityController = TextEditingController();
-  final _stateController = TextEditingController();
   final _postalCodeController = TextEditingController();
   
+  String? _selectedState;
+  
+  final List<String> _malaysiaStates = [
+    'Johor', 'Kedah', 'Kelantan', 'Kuala Lumpur', 'Labuan', 'Melaka',
+    'Negeri Sembilan', 'Pahang', 'Perak', 'Perlis', 'Pulau Pinang',
+    'Putrajaya', 'Sabah', 'Sarawak', 'Selangor', 'Terengganu'
+  ];
+
   bool _isDefault = false;
   bool _isLoading = false;
   String _errorMessage = '';
@@ -257,11 +264,15 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
       _phoneController.text = widget.address!['phone'] ?? '';
       _streetController.text = widget.address!['address_line1'] ?? '';
       _cityController.text = widget.address!['city'] ?? '';
-      _stateController.text = widget.address!['state'] ?? '';
       _postalCodeController.text = widget.address!['post_code'] ?? '';
+      
+      final savedState = widget.address!['state'] ?? '';
+      if (_malaysiaStates.contains(savedState)) {
+        _selectedState = savedState;
+      }
+      
       _isDefault = widget.address!['is_default'] ?? false;
     } else {
-      // PRE-FILL USER DATA FOR NEW ADDRESS
       _loadUserDataForNewAddress();
     }
   }
@@ -284,7 +295,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
         }
       }
     } catch (e) {
-      // Safely ignore if user profile data fails to load
+      // Ignore
     }
   }
 
@@ -294,16 +305,55 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
     _phoneController.dispose();
     _streetController.dispose();
     _cityController.dispose();
-    _stateController.dispose();
     _postalCodeController.dispose();
     super.dispose();
   }
 
+  // POSTCODE VALIDATION LOGIC FOR MALAYSIA
+  bool _isValidPostcodeForState(String postcode, String state) {
+    if (postcode.length != 5) return false;
+    final prefix = postcode.substring(0, 2);
+
+    final Map<String, List<String>> validPrefixes = {
+      'Johor': ['79', '80', '81', '82', '83', '84', '85', '86'],
+      'Kedah': ['05', '06', '07', '08', '09'],
+      'Kelantan': ['15', '16', '17', '18'],
+      'Kuala Lumpur': ['50', '51', '52', '53', '54', '55', '56', '57', '58', '59', '60'],
+      'Labuan': ['87'],
+      'Melaka': ['75', '76', '77', '78'],
+      'Negeri Sembilan': ['70', '71', '72', '73'],
+      'Pahang': ['25', '26', '27', '28', '39', '49', '69'],
+      'Perak': ['30', '31', '32', '33', '34', '35', '36', '39'],
+      'Perlis': ['01', '02'],
+      'Pulau Pinang': ['10', '11', '12', '13', '14'],
+      'Putrajaya': ['62'],
+      'Sabah': ['88', '89', '90', '91'],
+      'Sarawak': ['93', '94', '95', '96', '97', '98'],
+      'Selangor': ['40', '41', '42', '43', '44', '45', '46', '47', '48', '63', '64'],
+      'Terengganu': ['20', '21', '22', '23', '24'],
+    };
+
+    final allowedPrefixes = validPrefixes[state];
+    if (allowedPrefixes == null) return true; // Failsafe
+    return allowedPrefixes.contains(prefix);
+  }
+
   Future<void> _saveAddress() async {
-    // Validate fields manually to show error
-    if (_nameController.text.isEmpty || _phoneController.text.isEmpty || _streetController.text.isEmpty || _cityController.text.isEmpty || _stateController.text.isEmpty || _postalCodeController.text.isEmpty) {
+    final postcode = _postalCodeController.text.trim();
+
+    if (_nameController.text.isEmpty || _phoneController.text.isEmpty || 
+        _streetController.text.isEmpty || _cityController.text.isEmpty || 
+        postcode.isEmpty || _selectedState == null) {
       setState(() {
-        _errorMessage = 'Please fill in all fields';
+        _errorMessage = 'Please fill in all fields and select a state';
+      });
+      return;
+    }
+
+    // CHECK POSTCODE MATCHES STATE
+    if (!_isValidPostcodeForState(postcode, _selectedState!)) {
+      setState(() {
+        _errorMessage = 'Postcode "$postcode" does not match $_selectedState state. Please check again.';
       });
       return;
     }
@@ -317,20 +367,18 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
       final userId = Supabase.instance.client.auth.currentUser!.id;
 
       if (widget.address == null) {
-        // Create new address
         await _profileService.addAddress(
           userId: userId,
           fullName: _nameController.text.trim(),
           phoneNumber: _phoneController.text.trim(),
           street: _streetController.text.trim(),
           city: _cityController.text.trim(),
-          state: _stateController.text.trim(),
-          postalCode: _postalCodeController.text.trim(),
+          state: _selectedState!,
+          postalCode: postcode,
           country: 'Malaysia',
           isDefault: _isDefault,
         );
       } else {
-        // Update existing address
         await _profileService.updateAddress(
           addressId: widget.address!['address_id'],
           userId: userId,
@@ -338,8 +386,8 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
           phoneNumber: _phoneController.text.trim(),
           street: _streetController.text.trim(),
           city: _cityController.text.trim(),
-          state: _stateController.text.trim(),
-          postalCode: _postalCodeController.text.trim(),
+          state: _selectedState!,
+          postalCode: postcode,
           country: 'Malaysia',
           isDefault: _isDefault,
         );
@@ -390,13 +438,31 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
             
             Row(
               children: [
-                Expanded(child: _buildField('POSTCODE', _postalCodeController)),
+                Expanded(child: _buildField('POSTCODE', _postalCodeController, isNumber: true)),
                 const SizedBox(width: 16),
                 Expanded(child: _buildField('CITY', _cityController)),
               ],
             ),
             const SizedBox(height: 20),
-            _buildField('STATE', _stateController),
+            
+            const Text('STATE', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _selectedState,
+              hint: const Text('Select State', style: TextStyle(fontSize: 13, color: Colors.black45)),
+              items: _malaysiaStates.map((state) => DropdownMenuItem(
+                value: state,
+                child: Text(state),
+              )).toList(),
+              onChanged: (val) => setState(() => _selectedState = val),
+              decoration: InputDecoration(
+                filled: true, fillColor: const Color(0xFFF7F7F7),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.black12)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.black, width: 1.5)),
+              ),
+            ),
             const SizedBox(height: 20),
             
             SwitchListTile(
@@ -424,7 +490,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
     );
   }
 
-  Widget _buildField(String label, TextEditingController controller, {bool isPhone = false}) {
+  Widget _buildField(String label, TextEditingController controller, {bool isPhone = false, bool isNumber = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -432,7 +498,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
         const SizedBox(height: 8),
         TextField(
           controller: controller,
-          keyboardType: isPhone ? TextInputType.phone : TextInputType.text,
+          keyboardType: isPhone ? TextInputType.phone : (isNumber ? TextInputType.number : TextInputType.text),
           decoration: InputDecoration(
             filled: true, fillColor: const Color(0xFFF7F7F7),
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),

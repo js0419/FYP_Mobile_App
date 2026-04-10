@@ -294,7 +294,7 @@ class _ProductsPageState extends State<ProductsPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: const CustomAppBar(),
-      drawer: _buildDrawer(context),
+      drawer: const CustomDrawer(), 
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_paypal_payment/flutter_paypal_payment.dart';
 import '../../services/shop_service.dart';
 import '../../services/profile_service.dart';
 import 'receipt.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CheckoutScreen extends StatefulWidget {
   final List<Map<String, dynamic>> cartItems;
@@ -22,7 +22,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   List<Map<String, dynamic>> _addresses = [];
   String? _selectedAddressId;
   bool _isLoading = true;
-  final double _deliveryFee = 10.00; // Flat rate for example
+  double _deliveryFee = 0.00; // Now dynamic!
 
   @override
   void initState() {
@@ -42,10 +42,33 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           }
           _isLoading = false;
         });
+        
+        // Calculate fee based on the initially selected address
+        _updateDeliveryFee();
       }
     } catch (e) {
       setState(() => _isLoading = false);
     }
+  }
+
+  void _updateDeliveryFee() {
+    if (_selectedAddressId == null) {
+      setState(() => _deliveryFee = 0.00);
+      return;
+    }
+
+    final selectedAddress = _addresses.firstWhere((a) => a['address_id'] == _selectedAddressId);
+    final stateName = selectedAddress['state'].toString().toLowerCase();
+
+    setState(() {
+      // East Malaysia gets higher delivery fee (RM 15.00)
+      if (stateName.contains('sabah') || stateName.contains('sarawak') || stateName.contains('labuan')) {
+        _deliveryFee = 15.00;
+      } else {
+        // Semenanjung gets standard delivery fee (RM 10.00)
+        _deliveryFee = 10.00;
+      }
+    });
   }
 
   void _startPayPalCheckout() {
@@ -58,14 +81,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     Navigator.of(context).push(MaterialPageRoute(
       builder: (BuildContext context) => PaypalCheckoutView(
-        sandboxMode: true, // Set to false when going live
-        clientId: "YOUR_PAYPAL_CLIENT_ID_HERE", // Get from PayPal Developer Dashboard
-        secretKey: "YOUR_PAYPAL_SECRET_KEY_HERE", 
+        sandboxMode: true, 
+        clientId: "AZMAmLK0-uDdVsZvoARbH_pSWuH1KMLe0__-X0ocm5pHlvyTcJ1PB8_hj3B_8aDNfxJZnR2NNClucZun", 
+        secretKey: "ECKE7DaKCSJMRUi69s3y6jy6eBQDZ4Hy7ZgROAmuO4Qfo0pVLYtSnEn8lL9Y9-RSOgrQ0q1U4mZ5Iey9", 
+
+        
         transactions: [
           {
             "amount": {
               "total": total.toStringAsFixed(2),
-              "currency": "MYR", // Or USD depending on your PayPal account support
+              "currency": "MYR", 
               "details": {
                 "subtotal": widget.subtotal.toStringAsFixed(2),
                 "shipping": _deliveryFee.toStringAsFixed(2),
@@ -77,14 +102,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         ],
         note: "Contact us for any questions on your order.",
         onSuccess: (Map params) async {
-          // Payment Successful! Process the order in DB
           try {
             final orderId = await _shopService.processCheckout(
               addressId: _selectedAddressId!,
               cartItems: widget.cartItems,
               subtotal: widget.subtotal,
               deliveryFee: _deliveryFee,
-              paymentMethod: 'card', // mapped to enum
+              paymentMethod: 'card', 
             );
 
             if (mounted) {
@@ -132,13 +156,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               const Text('No address found. Please add one in profile.', style: TextStyle(color: Colors.red))
             else
               DropdownButtonFormField<String>(
-                initialValue: _selectedAddressId,
+                value: _selectedAddressId,
                 isExpanded: true,
                 items: _addresses.map((a) => DropdownMenuItem(
                   value: a['address_id'] as String,
-                  child: Text('${a['recipient_name']} - ${a['address_line1']}, ${a['city']}'),
+                  child: Text('${a['recipient_name']} - ${a['state']}'), // Show state to prove it works
                 )).toList(),
-                onChanged: (val) => setState(() => _selectedAddressId = val),
+                onChanged: (val) {
+                  setState(() => _selectedAddressId = val);
+                  _updateDeliveryFee(); // Recalculate fee if user picks a different address
+                },
                 decoration: const InputDecoration(border: OutlineInputBorder()),
               ),
             
@@ -152,7 +179,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             const SizedBox(height: 8),
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
               const Text('Delivery Fee', style: TextStyle(color: Colors.black54)),
-              Text('RM${_deliveryFee.toStringAsFixed(2)}')
+              Text('RM${_deliveryFee.toStringAsFixed(2)}', style: TextStyle(color: _deliveryFee > 10 ? Colors.red : Colors.black))
             ]),
             const SizedBox(height: 12),
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [

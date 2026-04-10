@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/profile_service.dart';
 
 class EditPasswordScreen extends StatefulWidget {
@@ -10,41 +11,54 @@ class EditPasswordScreen extends StatefulWidget {
 
 class _EditPasswordScreenState extends State<EditPasswordScreen> {
   final _profileService = ProfileService();
+  
+  final _oldPasswordController = TextEditingController();
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
   bool _isLoading = false;
+  bool _obscureOldPassword = true;
   bool _obscureNewPassword = true;
   bool _obscureConfirmPassword = true;
+  
   String _errorMessage = '';
   String _successMessage = '';
+  String? _oldPasswordError; // Error specifically for the old password field
 
   @override
   void dispose() {
+    _oldPasswordController.dispose();
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
   }
 
   Future<void> _updatePassword() async {
-    if (_newPasswordController.text.isEmpty ||
+    // 1. Basic empty field validation
+    if (_oldPasswordController.text.isEmpty ||
+        _newPasswordController.text.isEmpty ||
         _confirmPasswordController.text.isEmpty) {
       setState(() {
         _errorMessage = 'All fields are required';
+        _oldPasswordError = null;
       });
       return;
     }
 
+    // 2. Check if new passwords match
     if (_newPasswordController.text != _confirmPasswordController.text) {
       setState(() {
-        _errorMessage = 'Passwords do not match';
+        _errorMessage = 'New passwords do not match';
+        _oldPasswordError = null;
       });
       return;
     }
 
+    // 3. Check new password length
     if (_newPasswordController.text.length < 6) {
       setState(() {
-        _errorMessage = 'Password must be at least 6 characters';
+        _errorMessage = 'New password must be at least 6 characters';
+        _oldPasswordError = null;
       });
       return;
     }
@@ -53,13 +67,37 @@ class _EditPasswordScreenState extends State<EditPasswordScreen> {
       _isLoading = true;
       _errorMessage = '';
       _successMessage = '';
+      _oldPasswordError = null;
     });
 
     try {
+      final currentUser = Supabase.instance.client.auth.currentUser;
+      if (currentUser == null || currentUser.email == null) {
+        throw Exception('User is not logged in properly.');
+      }
+
+      // 4. VERIFY OLD PASSWORD FIRST
+      // We do this by attempting a sign-in with the current email and the old password
+      try {
+        await Supabase.instance.client.auth.signInWithPassword(
+          email: currentUser.email!,
+          password: _oldPasswordController.text,
+        );
+      } on AuthException catch (_) {
+        // If this throws, the old password was wrong!
+        setState(() {
+          _oldPasswordError = 'Incorrect current password';
+          _isLoading = false;
+        });
+        return; // Stop the process here
+      }
+
+      // 5. IF OLD PASSWORD IS CORRECT, UPDATE TO NEW PASSWORD
       await _profileService.updatePassword(_newPasswordController.text);
 
       setState(() {
         _successMessage = 'Password updated successfully!';
+        _oldPasswordController.clear();
         _newPasswordController.clear();
         _confirmPasswordController.clear();
       });
@@ -109,7 +147,7 @@ class _EditPasswordScreenState extends State<EditPasswordScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Error Message
+              // General Error Message (Top)
               if (_errorMessage.isNotEmpty)
                 Container(
                   width: double.infinity,
@@ -122,10 +160,7 @@ class _EditPasswordScreenState extends State<EditPasswordScreen> {
                   ),
                   child: Text(
                     _errorMessage,
-                    style: const TextStyle(
-                      color: Colors.red,
-                      fontSize: 12,
-                    ),
+                    style: const TextStyle(color: Colors.red, fontSize: 12),
                   ),
                 ),
 
@@ -142,20 +177,13 @@ class _EditPasswordScreenState extends State<EditPasswordScreen> {
                   ),
                   child: Text(
                     _successMessage,
-                    style: const TextStyle(
-                      color: Colors.green,
-                      fontSize: 12,
-                    ),
+                    style: const TextStyle(color: Colors.green, fontSize: 12),
                   ),
                 ),
 
               const Text(
                 'PASSWORD REQUIREMENTS',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.5,
-                ),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5),
               ),
               const SizedBox(height: 12),
               Container(
@@ -167,23 +195,62 @@ class _EditPasswordScreenState extends State<EditPasswordScreen> {
                 ),
                 child: const Text(
                   '• At least 6 characters long\n• Use a strong combination of letters, numbers, and symbols',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.black54,
-                    height: 1.6,
-                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.black54, height: 1.6),
                 ),
               ),
               const SizedBox(height: 32),
 
-              // New Password
+              // OLD PASSWORD FIELD
+              const Text(
+                'CURRENT PASSWORD',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _oldPasswordController,
+                obscureText: _obscureOldPassword,
+                cursorColor: Colors.black,
+                decoration: InputDecoration(
+                  hintText: 'Enter current password',
+                  hintStyle: const TextStyle(fontSize: 13, color: Colors.black45),
+                  filled: true,
+                  fillColor: const Color(0xFFF7F7F7),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscureOldPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                      color: Colors.black54,
+                      size: 20,
+                    ),
+                    onPressed: () => setState(() => _obscureOldPassword = !_obscureOldPassword),
+                  ),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8), 
+                    borderSide: BorderSide(color: _oldPasswordError != null ? Colors.red : Colors.black12)
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8), 
+                    borderSide: BorderSide(color: _oldPasswordError != null ? Colors.red : Colors.black, width: 1.5)
+                  ),
+                ),
+              ),
+              // ERROR MESSAGE DISPLAYED DIRECTLY UNDER THE OLD PASSWORD FIELD
+              if (_oldPasswordError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0, left: 4.0),
+                  child: Text(
+                    _oldPasswordError!,
+                    style: const TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.w500),
+                  ),
+                ),
+                
+              const SizedBox(height: 24),
+
+              // NEW PASSWORD FIELD
               const Text(
                 'NEW PASSWORD',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.5,
-                ),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5),
               ),
               const SizedBox(height: 8),
               TextField(
@@ -192,51 +259,29 @@ class _EditPasswordScreenState extends State<EditPasswordScreen> {
                 cursorColor: Colors.black,
                 decoration: InputDecoration(
                   hintText: 'Enter new password',
-                  hintStyle:
-                      const TextStyle(fontSize: 13, color: Colors.black45),
+                  hintStyle: const TextStyle(fontSize: 13, color: Colors.black45),
                   filled: true,
                   fillColor: const Color(0xFFF7F7F7),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscureNewPassword
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
+                      _obscureNewPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
                       color: Colors.black54,
                       size: 20,
                     ),
-                    onPressed: () {
-                      setState(() {
-                        _obscureNewPassword = !_obscureNewPassword;
-                      });
-                    },
+                    onPressed: () => setState(() => _obscureNewPassword = !_obscureNewPassword),
                   ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Colors.black12),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide:
-                        const BorderSide(color: Colors.black, width: 1.5),
-                  ),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.black12)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.black, width: 1.5)),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
 
-              // Confirm Password
+              // CONFIRM PASSWORD FIELD
               const Text(
-                'CONFIRM PASSWORD',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.5,
-                ),
+                'CONFIRM NEW PASSWORD',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5),
               ),
               const SizedBox(height: 8),
               TextField(
@@ -245,44 +290,26 @@ class _EditPasswordScreenState extends State<EditPasswordScreen> {
                 cursorColor: Colors.black,
                 decoration: InputDecoration(
                   hintText: 'Confirm new password',
-                  hintStyle:
-                      const TextStyle(fontSize: 13, color: Colors.black45),
+                  hintStyle: const TextStyle(fontSize: 13, color: Colors.black45),
                   filled: true,
                   fillColor: const Color(0xFFF7F7F7),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscureConfirmPassword
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
+                      _obscureConfirmPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
                       color: Colors.black54,
                       size: 20,
                     ),
-                    onPressed: () {
-                      setState(() {
-                        _obscureConfirmPassword = !_obscureConfirmPassword;
-                      });
-                    },
+                    onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
                   ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Colors.black12),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide:
-                        const BorderSide(color: Colors.black, width: 1.5),
-                  ),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.black12)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.black, width: 1.5)),
                 ),
               ),
               const SizedBox(height: 32),
 
-              // Update Button
+              // UPDATE BUTTON
               SizedBox(
                 width: double.infinity,
                 height: 56,
@@ -291,27 +318,14 @@ class _EditPasswordScreenState extends State<EditPasswordScreen> {
                     backgroundColor: Colors.black,
                     foregroundColor: Colors.white,
                     elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                   onPressed: _isLoading ? null : _updatePassword,
                   child: _isLoading
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
+                      ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                       : const Text(
                           'UPDATE PASSWORD',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 1.5,
-                          ),
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, letterSpacing: 1.5),
                         ),
                 ),
               ),
