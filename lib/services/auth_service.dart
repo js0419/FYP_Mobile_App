@@ -23,34 +23,52 @@ class AuthService {
   }
 
   Future<AuthResponse> login({
-    required String email,
-    required String password,
-    required bool rememberMe,
-  }) async {
-    try {
-      final emailError = ValidationService.validateEmail(email);
-      if (emailError != null) throw Exception(emailError);
+  required String email,
+  required String password,
+  required bool rememberMe,
+}) async {
+  try {
+    final emailError = ValidationService.validateEmail(email);
+    if (emailError != null) throw Exception(emailError);
 
-      final response = await _supabase.auth.signInWithPassword(
-        email: email.trim(),
-        password: password,
-      );
+    final response = await _supabase.auth.signInWithPassword(
+      email: email.trim(),
+      password: password,
+    );
 
-      if (rememberMe) {
-        await _secureStorage.write(key: _emailKey, value: email.trim());
-        await _secureStorage.write(key: _passwordKey, value: password);
-        await _secureStorage.write(key: _rememberMeKey, value: 'true');
-      } else {
-        await _clearStoredCredentials();
-      }
-
-      return response;
-    } on AuthException catch (e) {
-      throw AuthException(e.message, statusCode: e.statusCode);
-    } catch (e) {
-      throw Exception('Login failed: $e');
+    if (rememberMe) {
+      await _secureStorage.write(key: _emailKey, value: email.trim());
+      await _secureStorage.write(key: _passwordKey, value: password);
+      await _secureStorage.write(key: _rememberMeKey, value: 'true');
+    } else {
+      await _clearStoredCredentials();
     }
+
+    return response;
+  } on AuthException catch (e) {
+    final message = e.message.toLowerCase();
+
+    if (message.contains('invalid login credentials') ||
+        message.contains('invalid email or password') ||
+        e.statusCode == '400') {
+      throw Exception('Incorrect email or password');
+    }
+
+    if (message.contains('email not confirmed')) {
+      throw Exception('Please verify your email before logging in');
+    }
+
+    if (message.contains('too many requests') ||
+        message.contains('rate limit') ||
+        e.statusCode == '429') {
+      throw Exception('Too many login attempts. Please try again later');
+    }
+
+    throw Exception('Login failed. Please try again');
+  } catch (e) {
+    throw Exception('Login failed. Please try again');
   }
+}
 
   Future<AuthResponse> register({
     required String email,

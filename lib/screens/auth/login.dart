@@ -74,7 +74,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       setState(() {
-        _errorMessage = e.toString().replaceAll('Exception: ', '').replaceAll('AuthException: ', '');
+        _errorMessage = e.toString().replaceFirst('Exception: ', '').trim();
       });
     } finally {
       if (mounted) {
@@ -107,7 +107,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   onTap: () {
                     Navigator.pushAndRemoveUntil(
                       context,
-                      MaterialPageRoute(builder: (context) => const HomeScreen()),
+                      MaterialPageRoute(
+                        builder: (context) => const HomeScreen(),
+                      ),
                       (route) => false,
                     );
                   },
@@ -180,10 +182,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     child: Text(
                       _errorMessage,
-                      style: const TextStyle(
-                        color: Colors.red,
-                        fontSize: 12,
-                      ),
+                      style: const TextStyle(color: Colors.red, fontSize: 12),
                     ),
                   ),
 
@@ -203,12 +202,16 @@ class _LoginScreenState extends State<LoginScreen> {
                   cursorColor: Colors.black,
                   decoration: InputDecoration(
                     hintText: 'Enter your email',
-                    hintStyle:
-                        const TextStyle(fontSize: 13, color: Colors.black45),
+                    hintStyle: const TextStyle(
+                      fontSize: 13,
+                      color: Colors.black45,
+                    ),
                     filled: true,
                     fillColor: const Color(0xFFF7F7F7),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide.none,
@@ -219,8 +222,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide:
-                          const BorderSide(color: Colors.black, width: 1.5),
+                      borderSide: const BorderSide(
+                        color: Colors.black,
+                        width: 1.5,
+                      ),
                     ),
                   ),
                 ),
@@ -242,12 +247,16 @@ class _LoginScreenState extends State<LoginScreen> {
                   cursorColor: Colors.black,
                   decoration: InputDecoration(
                     hintText: 'Enter your password',
-                    hintStyle:
-                        const TextStyle(fontSize: 13, color: Colors.black45),
+                    hintStyle: const TextStyle(
+                      fontSize: 13,
+                      color: Colors.black45,
+                    ),
                     filled: true,
                     fillColor: const Color(0xFFF7F7F7),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
                     suffixIcon: IconButton(
                       icon: Icon(
                         _obscurePassword
@@ -272,8 +281,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide:
-                          const BorderSide(color: Colors.black, width: 1.5),
+                      borderSide: const BorderSide(
+                        color: Colors.black,
+                        width: 1.5,
+                      ),
                     ),
                   ),
                 ),
@@ -373,10 +384,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       const Text(
                         "Don't have an account? ",
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.black54,
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.black54),
                       ),
                       TextButton(
                         onPressed: () {

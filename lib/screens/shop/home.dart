@@ -5,6 +5,7 @@ import '../../widgets/custom_footer.dart';
 import '../../widgets/custom_drawer.dart';
 import 'product_details.dart';
 import 'product.dart';
+import 'ai_outfit_recommendation.dart';
 import '../../services/product_image_service.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -63,6 +64,32 @@ class _HomeScreenState extends State<HomeScreen> {
               child: _buildFashionBanner(screenWidth),
             ),
             SizedBox(height: screenWidth > 600 ? 50 : 30),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const AiOutfitRecommendationPage(),
+                      ),
+                    );
+                  },
+                  child: const Text('AI OUTFIT RECOMMENDATION'),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
             Text(
               'TRENDING NOW',
               style: TextStyle(

@@ -349,20 +349,16 @@ grant select on public.v_product_catalogue to anon, authenticated;
 -- =====================================================
 -- 6. AI RECOMMENDATION FUNCTION (Content-Based Expert System)
 -- =====================================================
--- UPDATED: Now properly handles JSON generation and Step 6 database logging
 create or replace function public.recommend_outfit_set(
+  p_user_id uuid default null,
   p_height_cm numeric default null,
   p_weight_kg numeric default null,
   p_style_name text default null,
   p_gender product_gender_enum default null
 )
 returns table (
-  category_name text,
-  product_id uuid,
-  product_name text,
-  product_price numeric,
-  recommended_size text,
-  matched_styles text[],
+  outfit_type text,
+  outfit_items jsonb,
   score numeric
 )
 language plpgsql
@@ -370,6 +366,7 @@ security definer
 set search_path = public
 as $$
 declare
+  v_user_id uuid;
   v_height numeric;
   v_weight numeric;
   v_gender product_gender_enum;
@@ -378,81 +375,369 @@ declare
   v_sizes size_enum[];
   v_recommendations_json jsonb;
 begin
-  -- STEP 1 & 3: Retrieve and validate inputs (Height, Weight, Gender)
-  select
-    coalesce(p_height_cm, u.height_cm),
-    coalesce(p_weight_kg, u.weight_kg),
-    coalesce(p_gender, case when u.user_gender = 'male' then 'men'::product_gender_enum when u.user_gender = 'female' then 'women'::product_gender_enum else 'unisex'::product_gender_enum end)
-  into v_height, v_weight, v_gender
-  from public.users u
-  where u.user_id = auth.uid();
+  v_user_id := coalesce(p_user_id, auth.uid());
+
+  if v_user_id is not null then
+    select
+      coalesce(p_height_cm, u.height_cm),
+      coalesce(p_weight_kg, u.weight_kg),
+      coalesce(
+        p_gender,
+        case
+          when u.user_gender = 'male' then 'men'::product_gender_enum
+          when u.user_gender = 'female' then 'women'::product_gender_enum
+          else 'unisex'::product_gender_enum
+        end
+      )
+    into v_height, v_weight, v_gender
+    from public.users u
+    where u.user_id = v_user_id;
+  else
+    v_height := p_height_cm;
+    v_weight := p_weight_kg;
+    v_gender := p_gender;
+  end if;
 
   if v_height is null or v_weight is null then
     raise exception 'Height and weight are required for recommendation.';
   end if;
 
-  -- Resolve the requested style ID
-  select s.style_id into v_style_id
-  from public.styles s
-  where lower(s.style_name) = lower(coalesce(p_style_name, (select s2.style_name from public.users u2 left join public.styles s2 on s2.style_id = u2.preferred_style_id where u2.user_id = auth.uid())))
-  limit 1;
+  if p_style_name is not null then
+    select s.style_id
+    into v_style_id
+    from public.styles s
+    where lower(s.style_name) = lower(p_style_name)
+    limit 1;
+  elsif v_user_id is not null then
+    select u.preferred_style_id
+    into v_style_id
+    from public.users u
+    where u.user_id = v_user_id
+    limit 1;
+  else
+    v_style_id := null;
+  end if;
 
-  -- STEP 4: AI Logic - BMI Calculation for Size Constraints
   v_bmi := v_weight / power(v_height / 100.0, 2);
 
-  if v_bmi < 18.5 then v_sizes := array['xs', 's']::size_enum[];
-  elsif v_bmi < 23 then v_sizes := array['s', 'm']::size_enum[];
-  elsif v_bmi < 27.5 then v_sizes := array['m', 'l']::size_enum[];
-  else v_sizes := array['l', 'xl', 'xxl']::size_enum[];
+  if v_bmi < 18.5 then
+    v_sizes := array['xs', 's']::size_enum[];
+  elsif v_bmi < 23 then
+    v_sizes := array['s', 'm']::size_enum[];
+  elsif v_bmi < 27.5 then
+    v_sizes := array['m', 'l']::size_enum[];
+  else
+    v_sizes := array['l', 'xl', 'xxl']::size_enum[];
   end if;
 
-  -- Create a temporary table to hold the scored recommendations
-  create temp table if not exists temp_recs (
-    category_name text, product_id uuid, product_name text, product_price numeric, recommended_size text, matched_styles text[], score numeric
+  create temp table if not exists temp_outfit_sets (
+    outfit_type text,
+    outfit_items jsonb,
+    score numeric
   ) on commit drop;
-  
-  truncate table temp_recs;
 
-  -- STEP 4 & 5: Compute Compatibility Score & Generate Ranked List
-  insert into temp_recs
+  truncate table temp_outfit_sets;
+
+  insert into temp_outfit_sets (outfit_type, outfit_items, score)
   with scored as (
     select
-      c.category_name, p.product_id, p.product_name, p.product_price,
-      coalesce((select q1.size::text from public.quantities q1 where q1.product_id = p.product_id and q1.product_stock > 0 and (q1.size = any(v_sizes) or q1.size = 'free_size') order by case q1.size when 'xs' then 1 when 's' then 2 when 'm' then 3 when 'l' then 4 when 'xl' then 5 when 'xxl' then 6 when 'free_size' then 7 end limit 1), 'out_of_stock') as recommended_size,
-      coalesce(array_agg(distinct s.style_name) filter (where s.style_name is not null), '{}'::text[]) as matched_styles,
+      c.category_name,
+      p.product_id,
+      p.product_name,
+      p.product_price,
+      coalesce(
+        (
+          select q1.size::text
+          from public.quantities q1
+          where q1.product_id = p.product_id
+            and q1.product_stock > 0
+            and (q1.size = any(v_sizes) or q1.size = 'free_size')
+          order by case q1.size
+            when 'xs' then 1
+            when 's' then 2
+            when 'm' then 3
+            when 'l' then 4
+            when 'xl' then 5
+            when 'xxl' then 6
+            when 'free_size' then 7
+          end
+          limit 1
+        ),
+        'out_of_stock'
+      ) as recommended_size,
+      coalesce(
+        array_agg(distinct s.style_name) filter (where s.style_name is not null),
+        '{}'::text[]
+      ) as matched_styles,
       (
-        -- 50% Weight: Style Match
-        (case when v_style_id is not null and exists (select 1 from public.product_styles ps2 where ps2.product_id = p.product_id and ps2.style_id = v_style_id) then 0.50 else 0 end) +
-        -- 30% Weight: Stock Availability in Predicted Size
-        (case when exists (select 1 from public.quantities q2 where q2.product_id = p.product_id and q2.product_stock > 0 and (q2.size = any(v_sizes) or q2.size = 'free_size')) then 0.30 else 0 end) +
-        -- 20% Weight: Historical Popularity / Sales
-        coalesce((select 0.20 * (sum(q3.product_sold)::numeric / nullif(sum(q3.product_sold + q3.product_stock), 0)) from public.quantities q3 where q3.product_id = p.product_id), 0)
-      )::numeric(6,4) as calculated_score
+        (case
+          when v_style_id is not null
+           and exists (
+             select 1
+             from public.product_styles ps2
+             where ps2.product_id = p.product_id
+               and ps2.style_id = v_style_id
+           )
+          then 0.50 else 0 end)
+        +
+        (case
+          when exists (
+            select 1
+            from public.quantities q2
+            where q2.product_id = p.product_id
+              and q2.product_stock > 0
+              and (q2.size = any(v_sizes) or q2.size = 'free_size')
+          )
+          then 0.30 else 0 end)
+        +
+        coalesce(
+          (
+            select 0.20 * (
+              sum(q3.product_sold)::numeric /
+              nullif(sum(q3.product_sold + q3.product_stock), 0)
+            )
+            from public.quantities q3
+            where q3.product_id = p.product_id
+          ),
+          0
+        )
+      )::numeric(6,4) as item_score
     from public.products p
-    join public.categories c on c.category_id = p.category_id
-    left join public.product_styles ps on ps.product_id = p.product_id
-    left join public.styles s on s.style_id = ps.style_id
+    join public.categories c
+      on c.category_id = p.category_id
+    left join public.product_styles ps
+      on ps.product_id = p.product_id
+    left join public.styles s
+      on s.style_id = ps.style_id
     where p.product_status = 'active'
-    group by p.product_id, c.category_name, p.product_name, p.product_price
+      and (
+        v_gender is null
+        or p.product_gender = v_gender
+        or p.product_gender = 'unisex'
+      )
+    group by
+      c.category_name,
+      p.product_id,
+      p.product_name,
+      p.product_price
+  ),
+  filtered as (
+    select *
+    from scored
+    where item_score > 0
+      and recommended_size <> 'out_of_stock'
+  ),
+  tops as (
+    select *
+    from filtered
+    where category_name = 'Top'
+    order by item_score desc
+    limit 3
+  ),
+  bottoms as (
+    select *
+    from filtered
+    where category_name = 'Bottom'
+    order by item_score desc
+    limit 3
+  ),
+  outerwears as (
+    select *
+    from filtered
+    where category_name = 'Outerwear'
+    order by item_score desc
+    limit 2
+  ),
+  dresses as (
+    select *
+    from filtered
+    where category_name = 'Dress'
+    order by item_score desc
+    limit 3
+  ),
+  accessories as (
+    select *
+    from filtered
+    where category_name = 'Accessories'
+    order by item_score desc
+    limit 2
+  ),
+  top_bottom_sets as (
+    select
+      'top_bottom_set'::text as outfit_type,
+      jsonb_build_object(
+        'top', jsonb_build_object(
+          'product_id', t.product_id,
+          'product_name', t.product_name,
+          'product_price', t.product_price,
+          'recommended_size', t.recommended_size,
+          'score', t.item_score
+        ),
+        'bottom', jsonb_build_object(
+          'product_id', b.product_id,
+          'product_name', b.product_name,
+          'product_price', b.product_price,
+          'recommended_size', b.recommended_size,
+          'score', b.item_score
+        ),
+        'outerwear', case
+          when o.product_id is not null then jsonb_build_object(
+            'product_id', o.product_id,
+            'product_name', o.product_name,
+            'product_price', o.product_price,
+            'recommended_size', o.recommended_size,
+            'score', o.item_score
+          )
+          else null
+        end,
+        'accessory', case
+          when a.product_id is not null then jsonb_build_object(
+            'product_id', a.product_id,
+            'product_name', a.product_name,
+            'product_price', a.product_price,
+            'recommended_size', a.recommended_size,
+            'score', a.item_score
+          )
+          else null
+        end
+      ) as outfit_items,
+      round(
+        (
+          t.item_score
+          + b.item_score
+          + coalesce(o.item_score, 0)
+          + coalesce(a.item_score, 0)
+        ) /
+        (
+          2
+          + case when o.product_id is not null then 1 else 0 end
+          + case when a.product_id is not null then 1 else 0 end
+        ),
+        4
+      ) as score
+    from tops t
+    cross join bottoms b
+    left join lateral (
+      select *
+      from outerwears
+      order by item_score desc
+      limit 1
+    ) o on true
+    left join lateral (
+      select *
+      from accessories
+      order by item_score desc
+      limit 1
+    ) a on true
+  ),
+  dress_sets as (
+    select
+      'dress_set'::text as outfit_type,
+      jsonb_build_object(
+        'dress', jsonb_build_object(
+          'product_id', d.product_id,
+          'product_name', d.product_name,
+          'product_price', d.product_price,
+          'recommended_size', d.recommended_size,
+          'score', d.item_score
+        ),
+        'outerwear', case
+          when o.product_id is not null then jsonb_build_object(
+            'product_id', o.product_id,
+            'product_name', o.product_name,
+            'product_price', o.product_price,
+            'recommended_size', o.recommended_size,
+            'score', o.item_score
+          )
+          else null
+        end,
+        'accessory', case
+          when a.product_id is not null then jsonb_build_object(
+            'product_id', a.product_id,
+            'product_name', a.product_name,
+            'product_price', a.product_price,
+            'recommended_size', a.recommended_size,
+            'score', a.item_score
+          )
+          else null
+        end
+      ) as outfit_items,
+      round(
+        (
+          d.item_score
+          + coalesce(o.item_score, 0)
+          + coalesce(a.item_score, 0)
+        ) /
+        (
+          1
+          + case when o.product_id is not null then 1 else 0 end
+          + case when a.product_id is not null then 1 else 0 end
+        ),
+        4
+      ) as score
+    from dresses d
+    left join lateral (
+      select *
+      from outerwears
+      order by item_score desc
+      limit 1
+    ) o on true
+    left join lateral (
+      select *
+      from accessories
+      order by item_score desc
+      limit 1
+    ) a on true
   )
-  select * from scored
-  where calculated_score > 0
-  order by calculated_score desc
-  limit 10;
+  select *
+  from (
+    select * from top_bottom_sets
+    union all
+    select * from dress_sets
+  ) all_sets
+  order by score desc
+  limit 5;
 
-  -- STEP 6: Store the recommendation session in the ai_recommendations table
-  select jsonb_agg(row_to_json(t)) into v_recommendations_json from temp_recs t;
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'outfit_type', t.outfit_type,
+        'outfit_items', t.outfit_items,
+        'score', t.score
+      )
+      order by t.score desc
+    ),
+    '[]'::jsonb
+  )
+  into v_recommendations_json
+  from temp_outfit_sets t;
 
-  if v_recommendations_json is not null then
-    insert into public.ai_recommendations (user_id, height_cm, weight_kg, requested_style_id, recommended_products)
-    values (auth.uid(), v_height, v_weight, v_style_id, v_recommendations_json);
+  if v_user_id is not null and v_recommendations_json <> '[]'::jsonb then
+    insert into public.ai_recommendations (
+      user_id,
+      height_cm,
+      weight_kg,
+      requested_style_id,
+      recommended_products
+    )
+    values (
+      v_user_id,
+      v_height,
+      v_weight,
+      v_style_id,
+      v_recommendations_json
+    );
   end if;
 
-  -- STEP 7: Return the recommended product list to Flutter
-  return query select * from temp_recs order by score desc;
+  return query
+  select
+    t.outfit_type,
+    t.outfit_items,
+    t.score
+  from temp_outfit_sets t
+  order by t.score desc;
 end;
 $$;
-
 
 -- =====================================================
 -- 7. ENABLE RLS
@@ -473,20 +758,16 @@ alter table public.payment_methods enable row level security;
 alter table public.payments enable row level security;
 alter table public.ai_recommendations enable row level security;
 
-
 -- =====================================================
 -- 8. POLICIES
 -- =====================================================
 
--- STYLES
 drop policy if exists "styles_readable" on public.styles;
 create policy "styles_readable" on public.styles for select to anon, authenticated using (true);
 
--- CATEGORIES
 drop policy if exists "categories_readable" on public.categories;
 create policy "categories_readable" on public.categories for select to anon, authenticated using (true);
 
--- USERS
 drop policy if exists "users_view_own" on public.users;
 create policy "users_view_own" on public.users for select to authenticated using (auth.uid() = user_id);
 
@@ -496,61 +777,49 @@ create policy "users_insert_own" on public.users for insert to authenticated wit
 drop policy if exists "users_update_own" on public.users;
 create policy "users_update_own" on public.users for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
--- PRODUCTS
 drop policy if exists "products_readable" on public.products;
 create policy "products_readable" on public.products for select to anon, authenticated using (product_status = 'active');
 
--- PRODUCT_STYLES
 drop policy if exists "product_styles_readable" on public.product_styles;
 create policy "product_styles_readable" on public.product_styles for select to anon, authenticated using (true);
 
--- QUANTITIES
 drop policy if exists "quantities_readable" on public.quantities;
 create policy "quantities_readable" on public.quantities for select to anon, authenticated using (true);
 
--- WISHLISTS
 drop policy if exists "wishlists_manage" on public.wishlists;
 create policy "wishlists_manage" on public.wishlists for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
--- CART
 drop policy if exists "cart_manage" on public.cart;
 create policy "cart_manage" on public.cart for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
--- ADDRESSES
 drop policy if exists "addresses_manage" on public.addresses;
 create policy "addresses_manage" on public.addresses for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
--- DELIVERIES
 drop policy if exists "deliveries_view" on public.deliveries;
 create policy "deliveries_view" on public.deliveries for select to authenticated using (
   exists (select 1 from public.orders o where o.delivery_id = deliveries.delivery_id and o.user_id = auth.uid())
 );
 
--- ORDERS
 drop policy if exists "orders_view" on public.orders;
 create policy "orders_view" on public.orders for select to authenticated using (auth.uid() = user_id);
 
 drop policy if exists "orders_insert" on public.orders;
 create policy "orders_insert" on public.orders for insert to authenticated with check (auth.uid() = user_id);
 
--- ORDER_DETAILS
 drop policy if exists "order_details_view" on public.order_details;
 create policy "order_details_view" on public.order_details for select to authenticated using (
   exists (select 1 from public.orders o where o.order_id = order_details.order_id and o.user_id = auth.uid())
 );
 
--- PAYMENT_METHODS
 drop policy if exists "payment_methods_manage" on public.payment_methods;
 create policy "payment_methods_manage" on public.payment_methods for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
--- PAYMENTS
 drop policy if exists "payments_view" on public.payments;
 create policy "payments_view" on public.payments for select to authenticated using (auth.uid() = user_id);
 
 drop policy if exists "payments_insert" on public.payments;
 create policy "payments_insert" on public.payments for insert to authenticated with check (auth.uid() = user_id);
 
--- AI_RECOMMENDATIONS
 drop policy if exists "ai_recommendations_manage" on public.ai_recommendations;
 create policy "ai_recommendations_manage" on public.ai_recommendations for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
@@ -1103,38 +1372,6 @@ join public.users u
   on u.user_email = x.user_email
 on conflict (payment_id) do nothing;
 
-insert into public.ai_recommendations (
-  user_id,
-  height_cm,
-  weight_kg,
-  requested_style_id,
-  recommended_products,
-  created_at
-)
-select
-  u.user_id,
-  u.height_cm,
-  u.weight_kg,
-  s.style_id,
-  x.recommended_products,
-  now()
-from (
-  values
-    ('alicia@gmail.com','Korean','["Korean Crop Tee","Korean Wide Jeans","Mini Shoulder Bag"]'::jsonb),
-    ('bryan@gmail.com','Streetwear','["Ghost Graphic Tee","Casual Cargo Pants","Varsity Jacket"]'::jsonb),
-    ('cindy@gmail.com','Chic','["Ribbon Blouse","Pleated Mini Skirt","Silver Necklace"]'::jsonb),
-    ('daniel@gmail.com','Casual','["Blue Stripe Shirt","Black Jogger Pants","White Sneakers"]'::jsonb),
-    ('emily@gmail.com','Japanese','["Floral Chiffon Blouse","Satin Long Skirt","Crossbody Sling Bag"]'::jsonb),
-    ('farah@gmail.com','Minimalist','["White Office Shirt","Office Straight Pants","Formal Hand Bag"]'::jsonb),
-    ('hafiz@gmail.com','Sporty','["Oversize Grey Hoodie","Black Jogger Pants","Korean Baseball Cap"]'::jsonb),
-    ('ivy@gmail.com','Vintage','["White Maxi Dress","Classic Belt","Winter Scarf"]'::jsonb),
-    ('jason@gmail.com','European','["Black Blazer Jacket","Black Loafers","Formal Hand Bag"]'::jsonb),
-    ('admin@gmail.com','Formal','["Satin Formal Shirt","Office Straight Pants","Black Loafers"]'::jsonb)
-) as x(user_email, style_name, recommended_products)
-join public.users u
-  on u.user_email = x.user_email
-left join public.styles s
-  on s.style_name = x.style_name;
 
 update public.users
 set role = 'admin'
