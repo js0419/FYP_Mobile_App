@@ -23,52 +23,52 @@ class AuthService {
   }
 
   Future<AuthResponse> login({
-  required String email,
-  required String password,
-  required bool rememberMe,
-}) async {
-  try {
-    final emailError = ValidationService.validateEmail(email);
-    if (emailError != null) throw Exception(emailError);
+    required String email,
+    required String password,
+    required bool rememberMe,
+  }) async {
+    try {
+      final emailError = ValidationService.validateEmail(email);
+      if (emailError != null) throw Exception(emailError);
 
-    final response = await _supabase.auth.signInWithPassword(
-      email: email.trim(),
-      password: password,
-    );
+      final response = await _supabase.auth.signInWithPassword(
+        email: email.trim(),
+        password: password,
+      );
 
-    if (rememberMe) {
-      await _secureStorage.write(key: _emailKey, value: email.trim());
-      await _secureStorage.write(key: _passwordKey, value: password);
-      await _secureStorage.write(key: _rememberMeKey, value: 'true');
-    } else {
-      await _clearStoredCredentials();
+      if (rememberMe) {
+        await _secureStorage.write(key: _emailKey, value: email.trim());
+        await _secureStorage.write(key: _passwordKey, value: password);
+        await _secureStorage.write(key: _rememberMeKey, value: 'true');
+      } else {
+        await _clearStoredCredentials();
+      }
+
+      return response;
+    } on AuthException catch (e) {
+      final message = e.message.toLowerCase();
+
+      if (message.contains('invalid login credentials') ||
+          message.contains('invalid email or password') ||
+          e.statusCode == '400') {
+        throw Exception('Email or password is wrong');
+      }
+
+      if (message.contains('email not confirmed')) {
+        throw Exception('Please verify your email before logging in');
+      }
+
+      if (message.contains('too many requests') ||
+          message.contains('rate limit') ||
+          e.statusCode == '429') {
+        throw Exception('Too many login attempts. Please try again later');
+      }
+
+      throw Exception('Login failed. Please try again');
+    } catch (e) {
+      throw Exception('Login failed. Please try again');
     }
-
-    return response;
-  } on AuthException catch (e) {
-    final message = e.message.toLowerCase();
-
-    if (message.contains('invalid login credentials') ||
-        message.contains('invalid email or password') ||
-        e.statusCode == '400') {
-      throw Exception('Incorrect email or password');
-    }
-
-    if (message.contains('email not confirmed')) {
-      throw Exception('Please verify your email before logging in');
-    }
-
-    if (message.contains('too many requests') ||
-        message.contains('rate limit') ||
-        e.statusCode == '429') {
-      throw Exception('Too many login attempts. Please try again later');
-    }
-
-    throw Exception('Login failed. Please try again');
-  } catch (e) {
-    throw Exception('Login failed. Please try again');
   }
-}
 
   Future<AuthResponse> register({
     required String email,
@@ -82,10 +82,16 @@ class AuthService {
       final emailError = ValidationService.validateEmail(email);
       if (emailError != null) throw Exception(emailError);
 
-      final firstNameError = ValidationService.validateName(firstName, 'First name');
+      final firstNameError = ValidationService.validateName(
+        firstName,
+        'First name',
+      );
       if (firstNameError != null) throw Exception(firstNameError);
 
-      final lastNameError = ValidationService.validateName(lastName, 'Last name');
+      final lastNameError = ValidationService.validateName(
+        lastName,
+        'Last name',
+      );
       if (lastNameError != null) throw Exception(lastNameError);
 
       final phoneError = ValidationService.validatePhone(phoneNumber);
@@ -122,12 +128,15 @@ class AuthService {
 
           if (existingUser != null) {
             // Update existing profile created by trigger
-            await _supabase.from('users').update({
-              'user_name': fullName,
-              'user_phone': phoneNumber.trim(),
-              'user_email': email.trim(),
-              'updated_at': now,
-            }).eq('user_id', userId);
+            await _supabase
+                .from('users')
+                .update({
+                  'user_name': fullName,
+                  'user_phone': phoneNumber.trim(),
+                  'user_email': email.trim(),
+                  'updated_at': now,
+                })
+                .eq('user_id', userId);
 
             print('DEBUG: User profile updated with phone and name');
           } else {
@@ -157,6 +166,24 @@ class AuthService {
     } catch (e) {
       throw Exception('Registration failed: $e');
     }
+  }
+
+  Future<String?> getCurrentUserRole() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return null;
+
+    final row = await _supabase
+        .from('users')
+        .select('role')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+    return row?['role']?.toString();
+  }
+
+  Future<bool> isCurrentUserAdmin() async {
+    final role = await getCurrentUserRole();
+    return role == 'admin';
   }
 
   String? _validatePasswordStrength(String? value) {
@@ -208,9 +235,7 @@ class AuthService {
       final passwordError = _validatePasswordStrength(newPassword);
       if (passwordError != null) throw Exception(passwordError);
 
-      await _supabase.auth.updateUser(
-        UserAttributes(password: newPassword),
-      );
+      await _supabase.auth.updateUser(UserAttributes(password: newPassword));
     } on AuthException catch (e) {
       throw AuthException(e.message, statusCode: e.statusCode);
     } catch (e) {
@@ -227,10 +252,7 @@ class AuthService {
     final email = await _secureStorage.read(key: _emailKey) ?? '';
     final password = await _secureStorage.read(key: _passwordKey) ?? '';
 
-    return {
-      'email': email,
-      'password': password,
-    };
+    return {'email': email, 'password': password};
   }
 
   Future<void> forgetDevice() async {

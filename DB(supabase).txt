@@ -739,6 +739,192 @@ begin
 end;
 $$;
 
+
+-- =====================================================
+-- Paypal Payment data
+-- =====================================================
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type t
+    join pg_enum e on e.enumtypid = t.oid
+    where t.typname = 'payment_method_enum'
+      and e.enumlabel = 'paypal'
+  ) then
+    alter type public.payment_method_enum add value 'paypal';
+  end if;
+end $$;
+
+alter table public.payments
+  add column if not exists provider_reference text,
+  add column if not exists receipt_email text,
+  add column if not exists payment_metadata jsonb not null default '{}'::jsonb;
+
+create or replace function public.process_checkout_payment(
+  p_address_id uuid,
+  p_cart_items jsonb,
+  p_subtotal numeric,
+  p_delivery_fee numeric,
+  p_payment_method public.payment_method_enum,
+  p_provider_reference text default null,
+  p_receipt_email text default null,
+  p_payment_metadata jsonb default '{}'::jsonb
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_delivery_id uuid;
+  v_order_id uuid;
+  v_item jsonb;
+  v_product_id uuid;
+  v_quantity_id bigint;
+  v_quantity integer;
+  v_unit_price numeric(10,2);
+  v_stock integer;
+begin
+  if v_user_id is null then
+    raise exception 'User not authenticated';
+  end if;
+
+  if p_address_id is null then
+    raise exception 'Address is required';
+  end if;
+
+  if not exists (
+    select 1
+    from public.addresses
+    where address_id = p_address_id
+      and user_id = v_user_id
+  ) then
+    raise exception 'Selected address is invalid';
+  end if;
+
+  if p_cart_items is null or jsonb_array_length(p_cart_items) = 0 then
+    raise exception 'Cart is empty';
+  end if;
+
+  insert into public.deliveries (
+    address_id,
+    delivery_fee,
+    delivery_status
+  )
+  values (
+    p_address_id,
+    coalesce(p_delivery_fee, 0),
+    'pending'
+  )
+  returning delivery_id into v_delivery_id;
+
+  insert into public.orders (
+    user_id,
+    delivery_id,
+    order_subtotal,
+    orders_status
+  )
+  values (
+    v_user_id,
+    v_delivery_id,
+    coalesce(p_subtotal, 0),
+    'confirmed'
+  )
+  returning order_id into v_order_id;
+
+  for v_item in
+    select value
+    from jsonb_array_elements(p_cart_items)
+  loop
+    v_product_id := (v_item ->> 'product_id')::uuid;
+    v_quantity_id := (v_item ->> 'quantity_id')::bigint;
+    v_quantity := greatest(coalesce((v_item ->> 'quantity')::integer, 1), 1);
+    v_unit_price := coalesce((v_item ->> 'unit_price')::numeric, 0);
+
+    select q.product_stock
+    into v_stock
+    from public.quantities q
+    where q.quantity_id = v_quantity_id
+      and q.product_id = v_product_id
+    for update;
+
+    if v_stock is null then
+      raise exception 'Invalid cart item';
+    end if;
+
+    if v_stock < v_quantity then
+      raise exception 'Not enough stock for one of the selected items';
+    end if;
+
+    insert into public.order_details (
+      order_id,
+      product_id,
+      quantity_id,
+      quantity,
+      unit_price
+    )
+    values (
+      v_order_id,
+      v_product_id,
+      v_quantity_id,
+      v_quantity,
+      v_unit_price
+    );
+
+    update public.quantities
+    set
+      product_stock = product_stock - v_quantity,
+      product_sold = product_sold + v_quantity
+    where quantity_id = v_quantity_id;
+  end loop;
+
+  insert into public.payments (
+    order_id,
+    user_id,
+    tax,
+    discount,
+    total_amount,
+    payment_method,
+    payment_status,
+    payment_date,
+    provider_reference,
+    receipt_email,
+    payment_metadata
+  )
+  values (
+    v_order_id,
+    v_user_id,
+    0,
+    0,
+    coalesce(p_subtotal, 0) + coalesce(p_delivery_fee, 0),
+    p_payment_method,
+    'paid',
+    now(),
+    p_provider_reference,
+    p_receipt_email,
+    coalesce(p_payment_metadata, '{}'::jsonb)
+  );
+
+  delete from public.cart
+  where user_id = v_user_id;
+
+  return v_order_id;
+end;
+$$;
+
+grant execute on function public.process_checkout_payment(
+  uuid,
+  jsonb,
+  numeric,
+  numeric,
+  public.payment_method_enum,
+  text,
+  text,
+  jsonb
+) to authenticated;
+
 -- =====================================================
 -- 7. ENABLE RLS
 -- =====================================================
@@ -854,6 +1040,97 @@ create policy "Users can delete"
 on storage.objects for delete
 using ( bucket_id = 'profile_pictures' and auth.uid() = owner );
 
+
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.users
+    where user_id = auth.uid()
+      and role = 'admin'
+  );
+$$;
+
+grant execute on function public.is_admin() to authenticated;
+
+drop policy if exists "users_admin_select" on public.users;
+create policy "users_admin_select"
+on public.users
+for select
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "users_admin_update" on public.users;
+create policy "users_admin_update"
+on public.users
+for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "products_admin_all" on public.products;
+create policy "products_admin_all"
+on public.products
+for all
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "quantities_admin_all" on public.quantities;
+create policy "quantities_admin_all"
+on public.quantities
+for all
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "orders_admin_select" on public.orders;
+create policy "orders_admin_select"
+on public.orders
+for select
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "orders_admin_update" on public.orders;
+create policy "orders_admin_update"
+on public.orders
+for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "order_details_admin_select" on public.order_details;
+create policy "order_details_admin_select"
+on public.order_details
+for select
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "deliveries_admin_select" on public.deliveries;
+create policy "deliveries_admin_select"
+on public.deliveries
+for select
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "payments_admin_select" on public.payments;
+create policy "payments_admin_select"
+on public.payments
+for select
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "payment_methods_admin_select" on public.payment_methods;
+create policy "payment_methods_admin_select"
+on public.payment_methods
+for select
+to authenticated
+using (public.is_admin());
 
 -- =====================================================
 -- 9. SEED DATA
@@ -1086,7 +1363,7 @@ insert into public.quantities (product_id, size, product_stock, product_sold)
 select p.product_id, x.size::size_enum, x.stock, 0
 from public.products p
 cross join (
-  values ('s',15), ('m',20), ('l',15)
+  values ('s',150), ('m',150), ('l',150)
 ) as x(size, stock)
 where p.product_type in ('shirt','tshirt','blouse','pants','jeans','dress','skirt')
 on conflict (product_id, size) do nothing;
@@ -1095,7 +1372,7 @@ insert into public.quantities (product_id, size, product_stock, product_sold)
 select p.product_id, x.size::size_enum, x.stock, 0
 from public.products p
 cross join (
-  values ('m',12), ('l',12), ('xl',10)
+  values ('m',150), ('l',150), ('xl',150)
 ) as x(size, stock)
 where p.product_type in ('jacket','hoodie')
 on conflict (product_id, size) do nothing;
@@ -1104,7 +1381,7 @@ insert into public.quantities (product_id, size, product_stock, product_sold)
 select p.product_id, x.size::size_enum, x.stock, 0
 from public.products p
 cross join (
-  values ('s',10), ('m',12), ('l',10)
+  values ('s',150), ('m',150), ('l',150)
 ) as x(size, stock)
 where p.product_type = 'shoes'
 on conflict (product_id, size) do nothing;

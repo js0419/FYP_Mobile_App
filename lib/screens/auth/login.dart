@@ -3,6 +3,7 @@ import '../../services/auth_service.dart';
 import '../shop/home.dart';
 import 'register.dart';
 import 'forgot_password.dart';
+import '../admin/admin_dashboard.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -66,12 +67,17 @@ class _LoginScreenState extends State<LoginScreen> {
         rememberMe: _rememberMe,
       );
 
-      if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
-          (route) => false,
-        );
-      }
+      final isAdmin = await _authService.isCurrentUserAdmin();
+
+      if (!mounted) return;
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (context) =>
+              isAdmin ? const AdminDashboardScreen() : const HomeScreen(),
+        ),
+        (route) => false,
+      );
     } catch (e) {
       setState(() {
         _errorMessage = e.toString().replaceFirst('Exception: ', '').trim();
