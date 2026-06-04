@@ -3,6 +3,7 @@ import '../screens/shop/home.dart';
 import '../screens/shop/product.dart';
 import '../screens/shop/cart.dart';
 import '../screens/profile/profile.dart';
+import '../screens/shop/wishlist.dart';
 
 class CustomDrawer extends StatelessWidget {
   const CustomDrawer({super.key});
@@ -62,16 +63,6 @@ class CustomDrawer extends StatelessWidget {
             onTap: () => _navigateTo(context, const ProductsPage()),
           ),
           ListTile(
-            leading: const Icon(Icons.info_outline, color: Colors.black),
-            title: const Text('ABOUT US PAGE'),
-            onTap: () => _openNamedRoute(context, '/about', 'About Us'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.help_outline, color: Colors.black),
-            title: const Text('FAQ PAGE'),
-            onTap: () => _openNamedRoute(context, '/faq', 'FAQ'),
-          ),
-          ListTile(
             leading: const Icon(Icons.shopping_bag_outlined, color: Colors.black),
             title: const Text('CART PAGE'),
             onTap: () => _navigateTo(context, const CartScreen()),
@@ -80,6 +71,27 @@ class CustomDrawer extends StatelessWidget {
             leading: const Icon(Icons.person_outline, color: Colors.black),
             title: const Text('PROFILE PAGE'),
             onTap: () => _navigateTo(context, const ProfileScreen()),
+          ),
+          ListTile(
+            leading: const Icon(Icons.favorite_border, color: Colors.black),
+            title: const Text(
+              'WISHLIST',
+              style: TextStyle(
+                color: Colors.black,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1.0,
+              ),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const WishlistScreen(),
+                ),
+              );
+            },
           ),
         ],
       ),

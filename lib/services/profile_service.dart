@@ -1,11 +1,11 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:typed_data';
+
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ProfileService {
   final SupabaseClient _supabase = Supabase.instance.client;
   static const String _profilePicsBucket = 'profile_pictures';
 
-  // Get user profile data
   Future<Map<String, dynamic>?> getUserProfile(String userId) async {
     try {
       final response = await _supabase
@@ -20,45 +20,36 @@ class ProfileService {
     }
   }
 
-  // Upload profile picture to storage and get public URL
   Future<String> uploadProfilePicture({
     required String userId,
-    required Uint8List imageBytes, // Changed from File to Uint8List
+    required Uint8List imageBytes,
+    String? fileName,
   }) async {
     try {
-      final fileName = 'profile_$userId.jpg';
-      final filePath = 'profile_pictures/$userId/$fileName';
+      final extension = _normalizeImageExtension(fileName);
+      final filePath = '$userId/profile$extension';
 
-      // Delete old picture if exists
-      try {
-        await _supabase.storage.from(_profilePicsBucket).remove([
-          'profile_pictures/$userId/$fileName',
-        ]);
-      } catch (e) {
-        print('No previous file to delete: $e');
-      }
+      await _removeAllKnownProfilePicturePaths(userId);
 
-      // Upload new picture using uploadBinary (works on Web & Mobile)
-      await _supabase.storage
-          .from(_profilePicsBucket)
-          .uploadBinary(
-            filePath,
-            imageBytes,
-            fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
-          );
+      await _supabase.storage.from(_profilePicsBucket).uploadBinary(
+        filePath,
+        imageBytes,
+        fileOptions: FileOptions(
+          cacheControl: '0',
+          upsert: true,
+          contentType: _contentTypeFromExtension(extension),
+        ),
+      );
 
-      // Get public URL
-      final publicUrl = _supabase.storage
-          .from(_profilePicsBucket)
-          .getPublicUrl(filePath);
+      final publicUrl =
+      _supabase.storage.from(_profilePicsBucket).getPublicUrl(filePath);
 
-      return publicUrl;
+      return '$publicUrl?v=${DateTime.now().millisecondsSinceEpoch}';
     } catch (e) {
       throw Exception('Failed to upload profile picture: $e');
     }
   }
 
-  // Update user profile with picture URL
   Future<void> updateUserProfile({
     required String userId,
     required String firstName,
@@ -66,26 +57,27 @@ class ProfileService {
     required String phoneNumber,
     String? gender,
     String? profilePicUrl,
-    double? height,
-    double? weight,
     String? preferredStyleId,
   }) async {
     try {
-      final updateData = <String, dynamic>{
-        'user_name': '$firstName $lastName',
-        'user_phone': phoneNumber,
-        'updated_at': DateTime.now().toIso8601String(),
-      };
+      final fullName =
+      '${firstName.trim()} ${lastName.trim()}'.trim();
 
-      if (gender != null && gender.isNotEmpty) {
-        updateData['user_gender'] = gender;
-      }
-      if (profilePicUrl != null && profilePicUrl.isNotEmpty) {
-        updateData['user_profile_pic'] = profilePicUrl;
-      }
-      if (height != null) updateData['height_cm'] = height;
-      if (weight != null) updateData['weight_kg'] = weight;
-      if (preferredStyleId != null) updateData['preferred_style_id'] = preferredStyleId;
+      final updateData = <String, dynamic>{
+        'user_name': fullName,
+        'user_phone': phoneNumber.trim(),
+        'updated_at': DateTime.now().toIso8601String(),
+        'user_profile_pic':
+        (profilePicUrl != null && profilePicUrl.trim().isNotEmpty)
+            ? profilePicUrl.trim()
+            : null,
+        'user_gender':
+        (gender != null && gender.trim().isNotEmpty) ? gender.trim() : null,
+        'preferred_style_id':
+        (preferredStyleId != null && preferredStyleId.trim().isNotEmpty)
+            ? preferredStyleId.trim()
+            : null,
+      };
 
       await _supabase.from('users').update(updateData).eq('user_id', userId);
     } catch (e) {
@@ -93,23 +85,19 @@ class ProfileService {
     }
   }
 
-  // Fetch all available styles for the dropdown
   Future<List<Map<String, dynamic>>> getStyles() async {
     try {
-      final response = await _supabase
-          .from('styles')
-          .select()
-          .order('style_name');
+      final response =
+      await _supabase.from('styles').select().order('style_name');
+
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       throw Exception('Failed to fetch styles: $e');
     }
   }
 
-  // CALL THE AI RECOMMENDATION FUNCTION
   Future<List<Map<String, dynamic>>> getAiRecommendations() async {
     try {
-      // This calls the recommend_outfit_set function in your Supabase DB
       final response = await _supabase.rpc('recommend_outfit_set');
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
@@ -117,38 +105,94 @@ class ProfileService {
     }
   }
 
-  // Delete profile picture
   Future<void> deleteProfilePicture(String userId) async {
     try {
-      await _supabase.storage.from(_profilePicsBucket).remove([
-        'profile_pictures/$userId/profile_$userId.jpg',
-      ]);
+      await _removeAllKnownProfilePicturePaths(userId);
+
+      await _supabase.from('users').update({
+        'user_profile_pic': null,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('user_id', userId);
     } catch (e) {
       throw Exception('Failed to delete profile picture: $e');
     }
   }
 
-  // Get profile picture URL
   String getProfilePictureUrl(String? picturePath, String userId) {
-    if (picturePath == null || picturePath.isEmpty) {
+    if (picturePath == null || picturePath.trim().isEmpty) {
       return '';
     }
 
-    if (picturePath.startsWith('http://') ||
-        picturePath.startsWith('https://')) {
-      return picturePath;
+    final cleanPath = picturePath.trim();
+
+    if (cleanPath.startsWith('http://') || cleanPath.startsWith('https://')) {
+      return cleanPath;
     }
 
-    return _supabase.storage
-        .from(_profilePicsBucket)
-        .getPublicUrl('profile_pictures/$userId/$picturePath');
+    final normalizedPath = cleanPath.startsWith('/')
+        ? cleanPath.substring(1)
+        : cleanPath;
+
+    final publicUrl =
+    _supabase.storage.from(_profilePicsBucket).getPublicUrl(normalizedPath);
+
+    return '$publicUrl?v=${DateTime.now().millisecondsSinceEpoch}';
   }
 
-  // ... rest of the existing methods (addresses, orders, etc.)
+  String _normalizeImageExtension(String? fileName) {
+    if (fileName == null || !fileName.contains('.')) {
+      return '.jpg';
+    }
+
+    final ext = '.${fileName.split('.').last.toLowerCase()}';
+
+    switch (ext) {
+      case '.jpg':
+      case '.jpeg':
+      case '.png':
+      case '.webp':
+        return ext;
+      default:
+        return '.jpg';
+    }
+  }
+
+  String _contentTypeFromExtension(String extension) {
+    switch (extension.toLowerCase()) {
+      case '.png':
+        return 'image/png';
+      case '.webp':
+        return 'image/webp';
+      case '.jpg':
+      case '.jpeg':
+      default:
+        return 'image/jpeg';
+    }
+  }
+
+  Future<void> _removeAllKnownProfilePicturePaths(String userId) async {
+    final paths = <String>[
+      '$userId/profile.jpg',
+      '$userId/profile.jpeg',
+      '$userId/profile.png',
+      '$userId/profile.webp',
+      'profile_pictures/$userId/profile_$userId.jpg',
+      'profile_pictures/$userId/profile_$userId.jpeg',
+      'profile_pictures/$userId/profile_$userId.png',
+      'profile_pictures/$userId/profile_$userId.webp',
+    ];
+
+    try {
+      await _supabase.storage.from(_profilePicsBucket).remove(paths);
+    } catch (_) {
+    }
+  }
 
   Future<void> updatePassword(String newPassword) async {
     try {
-      await _supabase.auth.updateUser(UserAttributes(password: newPassword));
+      await _supabase.auth.updateUser(
+        UserAttributes(password: newPassword),
+      );
     } on AuthException catch (e) {
       throw Exception(e.message);
     } catch (e) {
@@ -229,15 +273,15 @@ class ProfileService {
       await _supabase
           .from('addresses')
           .update({
-            'recipient_name': fullName,
-            'phone': phoneNumber,
-            'address_line1': street,
-            'city': city,
-            'state': state,
-            'post_code': postalCode,
-            'country': country,
-            'is_default': isDefault,
-          })
+        'recipient_name': fullName,
+        'phone': phoneNumber,
+        'address_line1': street,
+        'city': city,
+        'state': state,
+        'post_code': postalCode,
+        'country': country,
+        'is_default': isDefault,
+      })
           .eq('address_id', addressId);
     } catch (e) {
       throw Exception('Failed to update address: $e');
@@ -257,8 +301,8 @@ class ProfileService {
       final response = await _supabase
           .from('orders')
           .select(
-            'order_id, order_date, order_subtotal, orders_status, delivery_id, created_at',
-          )
+        'order_id, order_date, order_subtotal, orders_status, delivery_id, created_at',
+      )
           .eq('user_id', userId)
           .order('created_at', ascending: false);
 
@@ -273,8 +317,8 @@ class ProfileService {
       final response = await _supabase
           .from('order_details')
           .select(
-            'order_detail_id, quantity_id, quantity, unit_price, product_id, products(product_id, product_name, product_price), quantities(size)',
-          )
+        'order_detail_id, quantity_id, quantity, unit_price, product_id, products(product_id, product_name, product_price), quantities(size)',
+      )
           .eq('order_id', orderId);
 
       return List<Map<String, dynamic>>.from(response);

@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+
 import '../../services/auth_service.dart';
 import '../../services/profile_service.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../auth/login.dart';
-import 'edit_profile.dart';
-import 'edit_password.dart';
+import '../shop/wishlist.dart';
 import 'address.dart';
+import 'edit_password.dart';
+import 'edit_profile.dart';
 import 'order_history.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -18,7 +19,8 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final _authService = AuthService();
   final _profileService = ProfileService();
-  late Future<Map<String, dynamic>?> _userProfileFuture;
+
+  Future<Map<String, dynamic>?> _userProfileFuture = Future.value(null);
 
   @override
   void initState() {
@@ -30,6 +32,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final user = _authService.getCurrentUser();
     if (user != null) {
       _userProfileFuture = _profileService.getUserProfile(user.id);
+    } else {
+      _userProfileFuture = Future.value(null);
     }
   }
 
@@ -48,14 +52,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
             TextButton(
               onPressed: () async {
                 Navigator.of(context).pop();
+
                 try {
                   await _authService.logout();
+
                   if (mounted) {
                     Navigator.of(context).pushAndRemoveUntil(
                       MaterialPageRoute(
                         builder: (context) => const LoginScreen(),
                       ),
-                      (route) => false,
+                          (route) => false,
                     );
                   }
                 } catch (e) {
@@ -69,7 +75,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   }
                 }
               },
-              child: const Text('Logout', style: TextStyle(color: Colors.red)),
+              child: const Text(
+                'Logout',
+                style: TextStyle(color: Colors.red),
+              ),
             ),
           ],
         );
@@ -83,8 +92,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final trimmed = fullName.trim();
     if (trimmed.isEmpty) return 'U';
 
-    final nameParts =
-        trimmed.split(' ').where((part) => part.isNotEmpty).toList();
+    final nameParts = trimmed
+        .split(' ')
+        .where((part) => part.isNotEmpty)
+        .toList();
 
     if (nameParts.isEmpty) return 'U';
     if (nameParts.length == 1) return nameParts[0][0].toUpperCase();
@@ -120,8 +131,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.person_outline,
-                    size: 64, color: Colors.black26),
+                const Icon(
+                  Icons.person_outline,
+                  size: 64,
+                  color: Colors.black26,
+                ),
                 const SizedBox(height: 16),
                 const Text(
                   'NOT LOGGED IN',
@@ -134,10 +148,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: 8),
                 const Text(
                   'Please login to view your profile',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.black54,
-                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
                 ),
                 const SizedBox(height: 32),
                 SizedBox(
@@ -211,6 +222,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
 
           final profile = snapshot.data;
+          final rawPic = profile?['user_profile_pic']?.toString();
+          final profileImageUrl =
+          _profileService.getProfilePictureUrl(rawPic, user.id);
+          final gender = profile?['user_gender']?.toString() ?? '';
 
           return SingleChildScrollView(
             child: Padding(
@@ -218,7 +233,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Profile Card
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
@@ -231,7 +245,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       children: [
                         Row(
                           children: [
-                            // Profile Picture
                             Container(
                               width: 60,
                               height: 60,
@@ -241,41 +254,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(30),
-                                child: profile?['user_profile_pic'] != null &&
-                                        profile!['user_profile_pic']
-                                            .toString()
-                                            .isNotEmpty
+                                child: profileImageUrl.isNotEmpty
                                     ? Image.network(
-                                        profile['user_profile_pic'],
-                                        fit: BoxFit.cover,
-                                        errorBuilder:
-                                            (context, error, stackTrace) {
-                                          return Center(
-                                            child: Text(
-                                              _getProfileInitials(
-                                                  profile['user_name'] ??
-                                                      'User'),
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 20,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                      )
-                                    : Center(
-                                        child: Text(
-                                          _getProfileInitials(
-                                              profile?['user_name'] ??
-                                                  'User'),
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 20,
-                                            fontWeight: FontWeight.w600,
-                                          ),
+                                  profileImageUrl,
+                                  key: ValueKey(profileImageUrl),
+                                  fit: BoxFit.cover,
+                                  errorBuilder:
+                                      (context, error, stackTrace) {
+                                    return Center(
+                                      child: Text(
+                                        _getProfileInitials(
+                                          profile?['user_name']
+                                              ?.toString() ??
+                                              'User',
+                                        ),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w600,
                                         ),
                                       ),
+                                    );
+                                  },
+                                )
+                                    : Center(
+                                  child: Text(
+                                    _getProfileInitials(
+                                      profile?['user_name']?.toString() ??
+                                          'User',
+                                    ),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                             const SizedBox(width: 16),
@@ -284,7 +298,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    profile?['user_name'] ?? 'User Name',
+                                    profile?['user_name']?.toString() ??
+                                        'User Name',
                                     style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,
@@ -301,16 +316,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    profile?['user_phone'] ?? 'No phone',
+                                    profile?['user_phone']?.toString() ??
+                                        'No phone',
                                     style: const TextStyle(
                                       fontSize: 11,
                                       color: Colors.black54,
                                     ),
                                   ),
-                                  if (profile?['user_gender'] != null) ...[
+                                  if (gender.isNotEmpty) ...[
                                     const SizedBox(height: 4),
                                     Text(
-                                      'Gender: ${profile!['user_gender'][0].toUpperCase()}${profile['user_gender'].substring(1)}',
+                                      'Gender: ${gender[0].toUpperCase()}${gender.substring(1)}',
                                       style: const TextStyle(
                                         fontSize: 11,
                                         color: Colors.black54,
@@ -340,10 +356,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => EditProfileScreen(
-                                      userProfile: profile ?? {}),
+                                    userProfile: profile ?? {},
+                                  ),
                                 ),
                               );
-                              if (result == true) {
+
+                              if (result == true && mounted) {
                                 setState(() {
                                   _loadUserProfile();
                                 });
@@ -363,8 +381,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
-
-                  // Account Settings Section
                   const Text(
                     'ACCOUNT SETTINGS',
                     style: TextStyle(
@@ -375,7 +391,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-
                   _buildMenuTile(
                     icon: Icons.lock_outline,
                     title: 'Change Password',
@@ -388,7 +403,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       );
                     },
                   ),
-
                   _buildMenuTile(
                     icon: Icons.location_on_outlined,
                     title: 'Delivery Addresses',
@@ -401,7 +415,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       );
                     },
                   ),
-
                   _buildMenuTile(
                     icon: Icons.shopping_bag_outlined,
                     title: 'Order History',
@@ -414,10 +427,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       );
                     },
                   ),
-
+                  _buildMenuTile(
+                    icon: Icons.favorite_border,
+                    title: 'Wishlist',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const WishlistScreen(),
+                        ),
+                      );
+                    },
+                  ),
                   const SizedBox(height: 24),
-
-                  // Logout Button
                   SizedBox(
                     width: double.infinity,
                     height: 48,
@@ -464,10 +486,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
             letterSpacing: 0.5,
           ),
         ),
-        trailing: const Icon(Icons.arrow_forward_ios,
-            color: Colors.black54, size: 16),
+        trailing: const Icon(
+          Icons.arrow_forward_ios,
+          color: Colors.black54,
+          size: 16,
+        ),
         onTap: onTap,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 8,
+        ),
       ),
     );
   }

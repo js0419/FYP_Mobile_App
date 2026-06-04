@@ -1,8 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../services/ai_recommendation_service.dart';
-import '../../services/profile_service.dart';
 import '../../services/product_image_service.dart';
+import '../../services/profile_service.dart';
 import 'product_details.dart';
 
 class AiOutfitRecommendationPage extends StatefulWidget {
@@ -17,15 +21,19 @@ class _AiOutfitRecommendationPageState
     extends State<AiOutfitRecommendationPage> {
   final _aiService = AiRecommendationService();
   final _profileService = ProfileService();
+  final _imagePicker = ImagePicker();
 
   bool _isProfileLoading = true;
   bool _isLoading = false;
+  bool _isPickingImage = false;
 
-  double? _height;
-  double? _weight;
   String? _preferredStyleName;
   String _gender = 'unisex';
 
+  XFile? _selectedImage;
+  Uint8List? _selectedImageBytes;
+
+  Map<String, dynamic>? _bodyAnalysis;
   List<Map<String, dynamic>> _outfits = [];
   String _errorMessage = '';
 
@@ -56,10 +64,10 @@ class _AiOutfitRecommendationPageState
         throw Exception('Profile not found.');
       }
 
-      final heightValue = profile['height_cm'];
-      final weightValue = profile['weight_kg'];
       final preferredStyleId = profile['preferred_style_id'];
-      final userGender = (profile['user_gender'] ?? '').toString().toLowerCase();
+      final userGender = (profile['user_gender'] ?? '')
+          .toString()
+          .toLowerCase();
 
       String? resolvedStyleName;
       if (preferredStyleId != null) {
@@ -79,8 +87,6 @@ class _AiOutfitRecommendationPageState
       }
 
       setState(() {
-        _height = heightValue == null ? null : (heightValue as num).toDouble();
-        _weight = weightValue == null ? null : (weightValue as num).toDouble();
         _preferredStyleName = resolvedStyleName;
         _gender = resolvedGender;
       });
@@ -97,11 +103,46 @@ class _AiOutfitRecommendationPageState
     }
   }
 
-  Future<void> _generateOutfits() async {
-    if (_height == null || _weight == null || _preferredStyleName == null) {
+  Future<void> _pickImage() async {
+    setState(() {
+      _isPickingImage = true;
+      _errorMessage = '';
+    });
+
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1200,
+        imageQuality: 85,
+      );
+
+      if (picked == null) return;
+
+      final bytes = await picked.readAsBytes();
+
       setState(() {
-        _errorMessage =
-            'Please complete your height, weight, and preferred style in Profile > Edit Profile first.';
+        _selectedImage = picked;
+        _selectedImageBytes = bytes;
+        _bodyAnalysis = null;
+        _outfits = [];
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to pick image: $e';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPickingImage = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _generateOutfits() async {
+    if (_selectedImage == null) {
+      setState(() {
+        _errorMessage = 'Please upload a body image first.';
       });
       return;
     }
@@ -109,19 +150,23 @@ class _AiOutfitRecommendationPageState
     setState(() {
       _isLoading = true;
       _errorMessage = '';
+      _bodyAnalysis = null;
+      _outfits = [];
       _productFutureCache.clear();
     });
 
     try {
       final result = await _aiService.getRecommendedOutfits(
         userId: Supabase.instance.client.auth.currentUser?.id,
-        height: _height!,
-        weight: _weight!,
-        preferredStyle: _preferredStyleName!,
+        imageFile: _selectedImage!,
+        preferredStyle: _preferredStyleName,
         gender: _gender,
       );
 
       setState(() {
+        _bodyAnalysis = result['body_analysis'] == null
+            ? null
+            : Map<String, dynamic>.from(result['body_analysis']);
         _outfits = List<Map<String, dynamic>>.from(result['outfits'] ?? []);
       });
     } catch (e) {
@@ -186,9 +231,9 @@ class _AiOutfitRecommendationPageState
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to open product: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to open product: $e')));
     }
   }
 
@@ -228,6 +273,104 @@ class _AiOutfitRecommendationPageState
     );
   }
 
+  Widget _buildImagePreview() {
+    return Container(
+      width: double.infinity,
+      height: 220,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F7F7),
+        border: Border.all(color: Colors.black12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: _selectedImageBytes == null
+          ? const Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.image_outlined, size: 48, color: Colors.black38),
+                SizedBox(height: 10),
+                Text(
+                  'Upload a full-body image',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.black54,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            )
+          : ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.memory(_selectedImageBytes!, fit: BoxFit.cover),
+            ),
+    );
+  }
+
+  Widget _buildBodyAnalysisCard() {
+    if (_bodyAnalysis == null) return const SizedBox.shrink();
+
+    final bodyShape = (_bodyAnalysis!['body_shape'] ?? 'unknown').toString();
+    final confidence =
+        ((_bodyAnalysis!['confidence'] as num?)?.toDouble() ?? 0.0) * 100;
+    final summary = (_bodyAnalysis!['style_summary'] ?? '').toString();
+
+    final recommendedFocus = List<String>.from(
+      _bodyAnalysis!['recommended_focus'] ?? [],
+    );
+    final avoid = List<String>.from(_bodyAnalysis!['avoid'] ?? []);
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F7F7),
+        border: Border.all(color: Colors.black12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'AI BODY ANALYSIS',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Detected body shape: ${bodyShape.toUpperCase()}',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Confidence: ${confidence.toStringAsFixed(0)}%',
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+          if (summary.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(summary, style: const TextStyle(fontSize: 12)),
+          ],
+          if (recommendedFocus.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Recommended focus: ${recommendedFocus.join(', ')}',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ],
+          if (avoid.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Avoid / be careful with: ${avoid.join(', ')}',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildImageBox(String imageUrl) {
     return Container(
       width: 72,
@@ -242,16 +385,11 @@ class _AiOutfitRecommendationPageState
               child: Image.network(
                 imageUrl,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const Icon(
-                  Icons.broken_image,
-                  color: Colors.grey,
-                ),
+                errorBuilder: (_, __, ___) =>
+                    const Icon(Icons.broken_image, color: Colors.grey),
               ),
             )
-          : const Icon(
-              Icons.image_not_supported,
-              color: Colors.grey,
-            ),
+          : const Icon(Icons.image_not_supported, color: Colors.grey),
     );
   }
 
@@ -318,7 +456,7 @@ class _AiOutfitRecommendationPageState
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'RM ${product['product_price']} | Size: ${product['recommended_size']}',
+                          'RM ${product['product_price']} | Sizes: ${product['recommended_size']}',
                           style: const TextStyle(
                             fontSize: 12,
                             color: Colors.black87,
@@ -348,6 +486,7 @@ class _AiOutfitRecommendationPageState
     final items = Map<String, dynamic>.from(outfit['outfit_items'] ?? {});
     final score = (outfit['score'] as num?)?.toDouble() ?? 0.0;
     final outfitType = outfit['outfit_type']?.toString() ?? 'outfit_set';
+    final reason = (outfit['reason'] ?? '').toString();
 
     return Card(
       elevation: 2,
@@ -370,6 +509,13 @@ class _AiOutfitRecommendationPageState
               '$outfitType | Match Score: ${score.toStringAsFixed(2)}',
               style: const TextStyle(color: Colors.black54),
             ),
+            if (reason.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                reason,
+                style: const TextStyle(fontSize: 12, color: Colors.black87),
+              ),
+            ],
             const SizedBox(height: 12),
             _buildProductCard('Top', items['top']),
             _buildProductCard('Bottom', items['bottom']),
@@ -387,9 +533,7 @@ class _AiOutfitRecommendationPageState
     if (_isProfileLoading) {
       return const Scaffold(
         backgroundColor: Colors.white,
-        body: Center(
-          child: CircularProgressIndicator(color: Colors.black),
-        ),
+        body: Center(child: CircularProgressIndicator(color: Colors.black)),
       );
     }
 
@@ -401,9 +545,12 @@ class _AiOutfitRecommendationPageState
         elevation: 0,
       ),
       backgroundColor: Colors.white,
-      body: Padding(
+
+      // FIX: Make the whole page scroll
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (_errorMessage.isNotEmpty)
               Container(
@@ -420,55 +567,84 @@ class _AiOutfitRecommendationPageState
                   style: const TextStyle(color: Colors.red, fontSize: 12),
                 ),
               ),
+
             Row(
               children: [
-                _buildInfoBox(
-                  'HEIGHT',
-                  _height == null ? '-' : '${_height!.toStringAsFixed(0)} cm',
-                ),
-                const SizedBox(width: 12),
-                _buildInfoBox(
-                  'WEIGHT',
-                  _weight == null ? '-' : '${_weight!.toStringAsFixed(0)} kg',
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                _buildInfoBox('STYLE', _preferredStyleName ?? '-'),
+                _buildInfoBox('STYLE', _preferredStyleName ?? 'ANY'),
                 const SizedBox(width: 12),
                 _buildInfoBox('GENDER', _gender.toUpperCase()),
               ],
             ),
+
             const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _generateOutfits,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  foregroundColor: Colors.white,
+
+            _buildImagePreview(),
+
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _isPickingImage ? null : _pickImage,
+                    child: _isPickingImage
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(
+                            _selectedImage == null
+                                ? 'UPLOAD BODY IMAGE'
+                                : 'CHANGE IMAGE',
+                          ),
+                  ),
                 ),
-                child: _isLoading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('GENERATE OUTFIT SETS'),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: _outfits.isEmpty
-                  ? const Center(
-                      child: Text('No outfit recommendations yet'),
-                    )
-                  : ListView.builder(
-                      itemCount: _outfits.length,
-                      itemBuilder: (context, index) {
-                        return _buildOutfitCard(_outfits[index], index);
-                      },
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _generateOutfits,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      foregroundColor: Colors.white,
                     ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text('GENERATE OUTFITS'),
+                  ),
+                ),
+              ],
             ),
+
+            const SizedBox(height: 20),
+
+            if (_bodyAnalysis == null && _outfits.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 80),
+                child: Center(
+                  child: Text(
+                    'Upload a full-body image and generate outfit recommendations.',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              )
+            else ...[
+              _buildBodyAnalysisCard(),
+
+              ...List.generate(
+                _outfits.length,
+                (index) => _buildOutfitCard(_outfits[index], index),
+              ),
+
+              const SizedBox(height: 24),
+            ],
           ],
         ),
       ),
